@@ -6,7 +6,10 @@ const transformData = data => {
     state: data['3311'][0]['5850'],
     brightness: Math.round(data['3311'][0]['5851'] / 254 * 100),
     colorX: data['3311'][0]['5709'],
-    colorY: data['3311'][0]['5710']
+    colorY: data['3311'][0]['5710'],
+    color: {
+      hue: null
+    }
   }
 };
 
@@ -16,7 +19,7 @@ const hueToTemp = hue => {
   // of the Ikea Tradfri bulbs.
   if (hue > 150 && hue < 250) {
     // ~cold white
-    return [33135, 27211];
+    return [24930, 24694];
   } else if (hue <= 150 || hue > 340) {
     // ~warm white
     return [33135, 27211];
@@ -26,19 +29,29 @@ const hueToTemp = hue => {
   }
 }
 
+const tempToHue = (x,y) => {
+  switch (x) {
+    case 33135:
+      return 75;
+      break;
+    case 24930:
+      return 200;
+    default:
+      return 280;
+  }
+}
+
 export default class TradfriAccessory {
   constructor(accessory, platform) {
 
     this.platform = platform;
-    this.name = accessory['9001'];
-    this.rawData = accessory;
-    this.device = transformData(accessory);
 
+    this.device = transformData(accessory);
+    this.name = this.device.name;
   }
 
   identify(callback) {
-    console.log('hi');
-    callback();
+    callback(this.device.name);
   }
 
   getServices() {
@@ -49,7 +62,7 @@ export default class TradfriAccessory {
     accessoryInfo
       .setCharacteristic(Characteristic.Name, this.device.name)
       .setCharacteristic(Characteristic.Manufacturer, this.device.manufacturer)
-      .setCharacteristic(Characteristic.Model, "Lamp");
+      .setCharacteristic(Characteristic.Model, "Tradfri");
 
     const lightbulbService = new this.platform.bridge.Service.Lightbulb(this.device.name);
 
@@ -68,8 +81,9 @@ export default class TradfriAccessory {
       .on('get', this.getHue.bind(this))
       .on('set', this.setHue.bind(this));
 
-    lightbulbService.addCharacteristic(Characteristic.Saturation); // without this hue won't work either.
-
+    // only hue is not enough for the color picker to show up
+    // in the Home app, so we need to add Saturation too
+    lightbulbService.addCharacteristic(Characteristic.Saturation);
 
     return [accessoryInfo, lightbulbService];
   }
@@ -80,12 +94,13 @@ export default class TradfriAccessory {
     const response = await coap.get(`15001/${ this.device.id }`);
     this.rawData = response;
     this.device = transformData(response);
-    console.log('got state', this.device);
+
     callback(null, this.device.state);
   }
 
   async setState(state, callback) {
     const coap = this.platform.coap;
+
     this.device.state = state;
     const data = {
       "3311": [{
@@ -101,14 +116,14 @@ export default class TradfriAccessory {
     const coap = this.platform.coap;
 
     const response = await coap.get(`15001/${ this.device.id }`);
-
     this.device = transformData(response);
-    console.log('got state', this.device);
+
     callback(null, this.device.brightness);
   }
 
   async setBrightness(brightness, callback) {
     const coap = this.platform.coap;
+
     if (brightness > 0) {
       this.device.state = 1;
     }
@@ -118,7 +133,6 @@ export default class TradfriAccessory {
         "5851": Math.round(brightness * 2.54),
       }]
     };
-
     coap.put(`15001/${ this.device.id }`, data);
 
     callback();
@@ -128,31 +142,15 @@ export default class TradfriAccessory {
     const coap = this.platform.coap;
 
     const response = await coap.get(`15001/${ this.device.id }`);
-
     this.device = transformData(response);
 
-    console.log('Color X,Y: ',this.device.colorX, this.device.colorY);
-
-    // if (sat <= 12) {
-    //   // neutral white light
-    //   kelvin = 3500;
-    // } else if (sat > 12 && sat <= 20) {
-    //   // cold
-    //   kelvin = 2200;
-    // } else {
-    //   // warm light
-    //   kelvin = 6000;
-    // }
-
-    callback(null, 10);
-
+    callback(null, tempToHue(this.device.colorX, this.device.colorY));
   }
 
   async setHue(hue, callback) {
     const coap = this.platform.coap;
 
     const colors = hueToTemp(hue);
-
     this.device.colorX = colors[0];
     this.device.colorY = colors[1];
     const data = {
@@ -161,7 +159,6 @@ export default class TradfriAccessory {
         "5710": colors[1]
       }]
     };
-
     coap.put(`15001/${ this.device.id }`, data);
 
     callback();

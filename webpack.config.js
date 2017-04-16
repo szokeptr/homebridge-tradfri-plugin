@@ -13,13 +13,15 @@ module.exports = {
       child_process: true,
     }
   ],
+  target: 'node',
   module: {
     loaders: [
       {
+        exclude: /node_modules/,
         loader: 'babel-loader',
         options: {
           presets: ['env'],
-          plugins: ["add-module-exports"]
+          plugins: ['add-module-exports']
         }
       }
     ]
