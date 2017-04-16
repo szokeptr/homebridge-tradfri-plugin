@@ -1,6 +1,6 @@
 {
   "name": "homebridge-tradfri-plugin",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "author": {
     "name": "Szőke Péter",
     "email": "szokeptr@gmail.com",
@@ -38,7 +38,6 @@
     "webpack-async-await": "^1.1.0"
   },
   "dependencies": {
-    "coap": "^0.21.0",
     "command-exists": "^1.2.2"
   }
 }
