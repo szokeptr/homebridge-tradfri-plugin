@@ -1,4 +1,4 @@
-# homebridge-tradfri
+# homebridge-tradfri-plugin
 
 Ikea Tradfri Gateway plugin for [Homebridge](https://github.com/nfarina/homebridge).
 
@@ -31,7 +31,7 @@ sudo make install
 # Installation
 
 1. Install homebridge using: `npm install -g homebridge`
-2. Install this plugin using: `npm install -g homebridge-tradfri`
+2. Install this plugin using: `npm install -g homebridge-tradfri-plugin`
 3. Update your configuration file. See the sample below.
 
 # Configuration
