@@ -13,37 +13,49 @@ const transformData = data => {
   }
 };
 
-const hueToTemp = hue => {
-  // these are just very-very rough translations of
-  // hue to warm, neutral and cold white colors
-  // of the Ikea Tradfri bulbs.
-  if (hue > 150 && hue < 250) {
-    // ~cold white
-    return [24930, 24694];
-  } else if (hue <= 150 || hue > 340) {
-    // ~warm white
-    return [33135, 27211];
-  } else if (hue >= 250 && hue <= 340) {
-    // ~neutral white
-    return [30140, 26909];
+// Source: http://stackoverflow.com/a/9493060
+const hslToRgb = (h, s, l) => {
+  var r, g, b;
+
+  if(s == 0){
+    r = g = b = l; // achromatic
+  } else {
+    var hue2rgb = function hue2rgb(p, q, t){
+      if(t < 0) t += 1;
+      if(t > 1) t -= 1;
+      if(t < 1/6) return p + (q - p) * 6 * t;
+      if(t < 1/2) return q;
+      if(t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+      return p;
+    }
+
+    var q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+    var p = 2 * l - q;
+    r = hue2rgb(p, q, h + 1/3);
+    g = hue2rgb(p, q, h);
+    b = hue2rgb(p, q, h - 1/3);
   }
+
+  return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
 }
 
-const tempToHue = (x,y) => {
-  switch (x) {
-    case 33135:
-      return 75;
-      break;
-    case 24930:
-      return 200;
-    default:
-      return 280;
-  }
+// Source http://stackoverflow.com/a/36061908
+const rgbToXy = (red,green,blue) => {
+  red = (red > 0.04045) ? Math.pow((red + 0.055) / (1.0 + 0.055), 2.4) : (red / 12.92);
+  green = (green > 0.04045) ? Math.pow((green + 0.055) / (1.0 + 0.055), 2.4) : (green / 12.92);
+  blue = (blue > 0.04045) ? Math.pow((blue + 0.055) / (1.0 + 0.055), 2.4) : (blue / 12.92);
+  var X = red * 0.664511 + green * 0.154324 + blue * 0.162028;
+  var Y = red * 0.283881 + green * 0.668433 + blue * 0.047685;
+  var Z = red * 0.000088 + green * 0.072310 + blue * 0.986039;
+  var fx = X / (X + Y + Z);
+  var fy = Y / (X + Y + Z);
+  return [fx.toPrecision(4),fy.toPrecision(4)];
 }
+
+let newColor = {};
 
 export default class TradfriAccessory {
   constructor(accessory, platform) {
-
     this.platform = platform;
 
     this.device = transformData(accessory);
@@ -81,9 +93,10 @@ export default class TradfriAccessory {
       .on('get', this.getHue.bind(this))
       .on('set', this.setHue.bind(this));
 
-    // only hue is not enough for the color picker to show up
-    // in the Home app, so we need to add Saturation too
-    lightbulbService.addCharacteristic(Characteristic.Saturation);
+    lightbulbService
+      .getCharacteristic(Characteristic.Saturation)
+      .on('get', this.getSaturation.bind(this))
+      .on('set', this.setSaturation.bind(this));
 
     return [accessoryInfo, lightbulbService];
   }
@@ -98,7 +111,7 @@ export default class TradfriAccessory {
     callback(null, this.device.state);
   }
 
-  async setState(state, callback) {
+  setState(state, callback) {
     const coap = this.platform.coap;
 
     this.device.state = state;
@@ -121,7 +134,7 @@ export default class TradfriAccessory {
     callback(null, this.device.brightness);
   }
 
-  async setBrightness(brightness, callback) {
+  setBrightness(brightness, callback) {
     const coap = this.platform.coap;
 
     if (brightness > 0) {
@@ -144,24 +157,66 @@ export default class TradfriAccessory {
     const response = await coap.get(`15001/${ this.device.id }`);
     this.device = transformData(response);
 
-    callback(null, tempToHue(this.device.colorX, this.device.colorY));
+    callback(null, this.device.colorX);
   }
 
-  async setHue(hue, callback) {
-    const coap = this.platform.coap;
+  setHue(hue, callback) {
+    newColor.h = hue/360;
 
-    const colors = hueToTemp(hue);
-    this.device.colorX = colors[0];
-    this.device.colorY = colors[1];
-    const data = {
-      "3311": [{
-        "5709": colors[0],
-        "5710": colors[1]
-      }]
-    };
-    coap.put(`15001/${ this.device.id }`, data);
+    if (typeof newColor.s !== 'undefined') {
+      this.updateColor(newColor.h, newColor.s).then(() => {
+        newColor = {};
+      });
+    }
 
     callback();
+  }
+
+  async getSaturation(callback) {
+    const coap = this.platform.coap;
+
+    const response = await coap.get(`15001/${ this.device.id }`);
+    this.device = transformData(response);
+
+    callback(null, this.device.colorY);
+  }
+
+  setSaturation(saturation, callback) {
+    newColor.s = saturation/100;
+
+    if (typeof newColor.h !== 'undefined') {
+      this.updateColor(newColor.h, newColor.s).then(() => {
+        newColor = {};
+      });
+    }
+
+    callback();
+  }
+
+  updateColor(hue, saturation) {
+    const coap = this.platform.coap;
+    return new Promise((resolve, reject) => {
+      // First we convert hue and saturation
+      // to RGB, with 75% lighntess
+      const rgb = hslToRgb(hue, saturation, 0.75);
+      // Then we convert the rgb values to
+      // CIE L*a*b XY values
+      const cie = rgbToXy(...rgb).map(item => {
+        // we need to scale the values
+        return Math.floor(100000 * item);
+      });
+
+      this.device.colorX = cie[0];
+      this.device.colorY = cie[1];
+
+      const data = {
+        "3311": [{
+          "5709": cie[0],
+          "5710": cie[1]
+        }]
+      };
+      coap.put(`15001/${ this.device.id }`, data).then(resolve).catch(reject);
+    });
   }
 
 }

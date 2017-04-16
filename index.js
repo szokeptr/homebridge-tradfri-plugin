@@ -3419,7 +3419,6 @@ var Coap = function () {
         var jsonData = JSON.stringify(data);
 
         var coapCmd = 'coap-client -u \'' + _this2.username + '\' -k \'' + _this2.key + '\' -B 5 -m PUT -e \'' + jsonData + '\' coaps://' + _this2.host + ':5684/' + path;
-        console.log('[Exec] ' + coapCmd);
         exec(coapCmd, execConfig, function (error, stdout, stderr) {
           if (error) {
             reject(error);
@@ -3459,6 +3458,8 @@ Object.defineProperty(exports, "__esModule", {
 
 var _createClass = function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; }();
 
+function _toConsumableArray(arr) { if (Array.isArray(arr)) { for (var i = 0, arr2 = Array(arr.length); i < arr.length; i++) { arr2[i] = arr[i]; } return arr2; } else { return Array.from(arr); } }
+
 function _asyncToGenerator(fn) { return function () { var gen = fn.apply(this, arguments); return new Promise(function (resolve, reject) { function step(key, arg) { try { var info = gen[key](arg); var value = info.value; } catch (error) { reject(error); return; } if (info.done) { resolve(value); } else { return Promise.resolve(value).then(function (value) { step("next", value); }, function (err) { step("throw", err); }); } } return step("next"); }); }; }
 
 function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
@@ -3478,33 +3479,46 @@ var transformData = function transformData(data) {
   };
 };
 
-var hueToTemp = function hueToTemp(hue) {
-  // these are just very-very rough translations of
-  // hue to warm, neutral and cold white colors
-  // of the Ikea Tradfri bulbs.
-  if (hue > 150 && hue < 250) {
-    // ~cold white
-    return [24930, 24694];
-  } else if (hue <= 150 || hue > 340) {
-    // ~warm white
-    return [33135, 27211];
-  } else if (hue >= 250 && hue <= 340) {
-    // ~neutral white
-    return [30140, 26909];
+// Source: http://stackoverflow.com/a/9493060
+var hslToRgb = function hslToRgb(h, s, l) {
+  var r, g, b;
+
+  if (s == 0) {
+    r = g = b = l; // achromatic
+  } else {
+    var hue2rgb = function hue2rgb(p, q, t) {
+      if (t < 0) t += 1;
+      if (t > 1) t -= 1;
+      if (t < 1 / 6) return p + (q - p) * 6 * t;
+      if (t < 1 / 2) return q;
+      if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+      return p;
+    };
+
+    var q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+    var p = 2 * l - q;
+    r = hue2rgb(p, q, h + 1 / 3);
+    g = hue2rgb(p, q, h);
+    b = hue2rgb(p, q, h - 1 / 3);
   }
+
+  return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
 };
 
-var tempToHue = function tempToHue(x, y) {
-  switch (x) {
-    case 33135:
-      return 75;
-      break;
-    case 24930:
-      return 200;
-    default:
-      return 280;
-  }
+// Source http://stackoverflow.com/a/36061908
+var rgbToXy = function rgbToXy(red, green, blue) {
+  red = red > 0.04045 ? Math.pow((red + 0.055) / (1.0 + 0.055), 2.4) : red / 12.92;
+  green = green > 0.04045 ? Math.pow((green + 0.055) / (1.0 + 0.055), 2.4) : green / 12.92;
+  blue = blue > 0.04045 ? Math.pow((blue + 0.055) / (1.0 + 0.055), 2.4) : blue / 12.92;
+  var X = red * 0.664511 + green * 0.154324 + blue * 0.162028;
+  var Y = red * 0.283881 + green * 0.668433 + blue * 0.047685;
+  var Z = red * 0.000088 + green * 0.072310 + blue * 0.986039;
+  var fx = X / (X + Y + Z);
+  var fy = Y / (X + Y + Z);
+  return [fx.toPrecision(4), fy.toPrecision(4)];
 };
+
+var newColor = {};
 
 var TradfriAccessory = function () {
   function TradfriAccessory(accessory, platform) {
@@ -3538,9 +3552,7 @@ var TradfriAccessory = function () {
 
       lightbulbService.getCharacteristic(Characteristic.Hue).on('get', this.getHue.bind(this)).on('set', this.setHue.bind(this));
 
-      // only hue is not enough for the color picker to show up
-      // in the Home app, so we need to add Saturation too
-      lightbulbService.addCharacteristic(Characteristic.Saturation);
+      lightbulbService.getCharacteristic(Characteristic.Saturation).on('get', this.getSaturation.bind(this)).on('set', this.setSaturation.bind(this));
 
       return [accessoryInfo, lightbulbService];
     }
@@ -3581,28 +3593,40 @@ var TradfriAccessory = function () {
     }()
   }, {
     key: 'setState',
+    value: function setState(state, callback) {
+      var coap = this.platform.coap;
+
+      this.device.state = state;
+      var data = {
+        "3311": [{
+          "5850": state
+        }]
+      };
+      coap.put('15001/' + this.device.id, data);
+
+      callback();
+    }
+  }, {
+    key: 'getBrightness',
     value: function () {
-      var _ref2 = _asyncToGenerator(regeneratorRuntime.mark(function _callee2(state, callback) {
-        var coap, data;
+      var _ref2 = _asyncToGenerator(regeneratorRuntime.mark(function _callee2(callback) {
+        var coap, response;
         return regeneratorRuntime.wrap(function _callee2$(_context2) {
           while (1) {
             switch (_context2.prev = _context2.next) {
               case 0:
                 coap = this.platform.coap;
+                _context2.next = 3;
+                return coap.get('15001/' + this.device.id);
 
+              case 3:
+                response = _context2.sent;
 
-                this.device.state = state;
-                data = {
-                  "3311": [{
-                    "5850": state
-                  }]
-                };
+                this.device = transformData(response);
 
-                coap.put('15001/' + this.device.id, data);
+                callback(null, this.device.brightness);
 
-                callback();
-
-              case 5:
+              case 6:
               case 'end':
                 return _context2.stop();
             }
@@ -3610,14 +3634,32 @@ var TradfriAccessory = function () {
         }, _callee2, this);
       }));
 
-      function setState(_x2, _x3) {
+      function getBrightness(_x2) {
         return _ref2.apply(this, arguments);
       }
 
-      return setState;
+      return getBrightness;
     }()
   }, {
-    key: 'getBrightness',
+    key: 'setBrightness',
+    value: function setBrightness(brightness, callback) {
+      var coap = this.platform.coap;
+
+      if (brightness > 0) {
+        this.device.state = 1;
+      }
+      this.device.brightness = brightness;
+      var data = {
+        "3311": [{
+          "5851": Math.round(brightness * 2.54)
+        }]
+      };
+      coap.put('15001/' + this.device.id, data);
+
+      callback();
+    }
+  }, {
+    key: 'getHue',
     value: function () {
       var _ref3 = _asyncToGenerator(regeneratorRuntime.mark(function _callee3(callback) {
         var coap, response;
@@ -3634,7 +3676,7 @@ var TradfriAccessory = function () {
 
                 this.device = transformData(response);
 
-                callback(null, this.device.brightness);
+                callback(null, this.device.colorX);
 
               case 6:
               case 'end':
@@ -3644,37 +3686,44 @@ var TradfriAccessory = function () {
         }, _callee3, this);
       }));
 
-      function getBrightness(_x4) {
+      function getHue(_x3) {
         return _ref3.apply(this, arguments);
       }
 
-      return getBrightness;
+      return getHue;
     }()
   }, {
-    key: 'setBrightness',
+    key: 'setHue',
+    value: function setHue(hue, callback) {
+      newColor.h = hue / 360;
+
+      if (typeof newColor.s !== 'undefined') {
+        this.updateColor(newColor.h, newColor.s).then(function () {
+          newColor = {};
+        });
+      }
+
+      callback();
+    }
+  }, {
+    key: 'getSaturation',
     value: function () {
-      var _ref4 = _asyncToGenerator(regeneratorRuntime.mark(function _callee4(brightness, callback) {
-        var coap, data;
+      var _ref4 = _asyncToGenerator(regeneratorRuntime.mark(function _callee4(callback) {
+        var coap, response;
         return regeneratorRuntime.wrap(function _callee4$(_context4) {
           while (1) {
             switch (_context4.prev = _context4.next) {
               case 0:
                 coap = this.platform.coap;
+                _context4.next = 3;
+                return coap.get('15001/' + this.device.id);
 
+              case 3:
+                response = _context4.sent;
 
-                if (brightness > 0) {
-                  this.device.state = 1;
-                }
-                this.device.brightness = brightness;
-                data = {
-                  "3311": [{
-                    "5851": Math.round(brightness * 2.54)
-                  }]
-                };
+                this.device = transformData(response);
 
-                coap.put('15001/' + this.device.id, data);
-
-                callback();
+                callback(null, this.device.colorY);
 
               case 6:
               case 'end':
@@ -3684,85 +3733,54 @@ var TradfriAccessory = function () {
         }, _callee4, this);
       }));
 
-      function setBrightness(_x5, _x6) {
+      function getSaturation(_x4) {
         return _ref4.apply(this, arguments);
       }
 
-      return setBrightness;
+      return getSaturation;
     }()
   }, {
-    key: 'getHue',
-    value: function () {
-      var _ref5 = _asyncToGenerator(regeneratorRuntime.mark(function _callee5(callback) {
-        var coap, response;
-        return regeneratorRuntime.wrap(function _callee5$(_context5) {
-          while (1) {
-            switch (_context5.prev = _context5.next) {
-              case 0:
-                coap = this.platform.coap;
-                _context5.next = 3;
-                return coap.get('15001/' + this.device.id);
+    key: 'setSaturation',
+    value: function setSaturation(saturation, callback) {
+      newColor.s = saturation / 100;
 
-              case 3:
-                response = _context5.sent;
-
-                this.device = transformData(response);
-
-                callback(null, tempToHue(this.device.colorX, this.device.colorY));
-
-              case 6:
-              case 'end':
-                return _context5.stop();
-            }
-          }
-        }, _callee5, this);
-      }));
-
-      function getHue(_x7) {
-        return _ref5.apply(this, arguments);
+      if (typeof newColor.h !== 'undefined') {
+        this.updateColor(newColor.h, newColor.s).then(function () {
+          newColor = {};
+        });
       }
 
-      return getHue;
-    }()
+      callback();
+    }
   }, {
-    key: 'setHue',
-    value: function () {
-      var _ref6 = _asyncToGenerator(regeneratorRuntime.mark(function _callee6(hue, callback) {
-        var coap, colors, data;
-        return regeneratorRuntime.wrap(function _callee6$(_context6) {
-          while (1) {
-            switch (_context6.prev = _context6.next) {
-              case 0:
-                coap = this.platform.coap;
-                colors = hueToTemp(hue);
+    key: 'updateColor',
+    value: function updateColor(hue, saturation) {
+      var _this = this;
 
-                this.device.colorX = colors[0];
-                this.device.colorY = colors[1];
-                data = {
-                  "3311": [{
-                    "5709": colors[0],
-                    "5710": colors[1]
-                  }]
-                };
+      var coap = this.platform.coap;
+      return new Promise(function (resolve, reject) {
+        // First we convert hue and saturation
+        // to RGB, with 75% lighntess
+        var rgb = hslToRgb(hue, saturation, 0.75);
+        // Then we convert the rgb values to
+        // CIE L*a*b XY values
+        var cie = rgbToXy.apply(undefined, _toConsumableArray(rgb)).map(function (item) {
+          // we need to scale the values
+          return Math.floor(100000 * item);
+        });
 
-                coap.put('15001/' + this.device.id, data);
+        _this.device.colorX = cie[0];
+        _this.device.colorY = cie[1];
 
-                callback();
-
-              case 7:
-              case 'end':
-                return _context6.stop();
-            }
-          }
-        }, _callee6, this);
-      }));
-
-      function setHue(_x8, _x9) {
-        return _ref6.apply(this, arguments);
-      }
-
-      return setHue;
-    }()
+        var data = {
+          "3311": [{
+            "5709": cie[0],
+            "5710": cie[1]
+          }]
+        };
+        coap.put('15001/' + _this.device.id, data).then(resolve).catch(reject);
+      });
+    }
   }]);
 
   return TradfriAccessory;
