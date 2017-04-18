@@ -3390,23 +3390,25 @@ var Coap = function () {
 
       return new Promise(function (resolve, reject) {
         var coapCmd = 'coap-client -u \'' + _this.username + '\' -k \'' + _this.key + '\' -B 5 coaps://' + _this.host + ':5684/' + path;
+        console.log(coapCmd);
+        setTimeout(function () {
+          exec(coapCmd, execConfig, function (error, stdout, stderr) {
+            if (error) {
+              reject(error);
+              return;
+            }
 
-        exec(coapCmd, execConfig, function (error, stdout, stderr) {
-          if (error) {
-            reject(error);
-            return;
-          }
+            var split = stdout.trim().split("\n");
+            var json = split.pop();
 
-          var split = stdout.trim().split("\n");
-          var json = split.pop();
-
-          try {
-            var response = JSON.parse(json);
-            resolve(response);
-          } catch (e) {
-            reject(e);
-          }
-        });
+            try {
+              var response = JSON.parse(json);
+              resolve(response);
+            } catch (e) {
+              reject(e);
+            }
+          });
+        }, Math.ceil(100 * Math.random() + 50));
       });
     }
   }, {
@@ -3419,6 +3421,7 @@ var Coap = function () {
         var jsonData = JSON.stringify(data);
 
         var coapCmd = 'coap-client -u \'' + _this2.username + '\' -k \'' + _this2.key + '\' -B 5 -m PUT -e \'' + jsonData + '\' coaps://' + _this2.host + ':5684/' + path;
+        console.log(coapCmd);
         exec(coapCmd, execConfig, function (error, stdout, stderr) {
           if (error) {
             reject(error);
@@ -3459,8 +3462,6 @@ Object.defineProperty(exports, "__esModule", {
 var _createClass = function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; }();
 
 function _toConsumableArray(arr) { if (Array.isArray(arr)) { for (var i = 0, arr2 = Array(arr.length); i < arr.length; i++) { arr2[i] = arr[i]; } return arr2; } else { return Array.from(arr); } }
-
-function _asyncToGenerator(fn) { return function () { var gen = fn.apply(this, arguments); return new Promise(function (resolve, reject) { function step(key, arg) { try { var info = gen[key](arg); var value = info.value; } catch (error) { reject(error); return; } if (info.done) { resolve(value); } else { return Promise.resolve(value).then(function (value) { step("next", value); }, function (err) { step("throw", err); }); } } return step("next"); }); }; }
 
 function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
 
@@ -3528,6 +3529,9 @@ var TradfriAccessory = function () {
 
     this.device = transformData(accessory);
     this.name = this.device.name;
+
+    this.loading = false;
+    this.dataCallbacks = [];
   }
 
   _createClass(TradfriAccessory, [{
@@ -3557,44 +3561,46 @@ var TradfriAccessory = function () {
       return [accessoryInfo, lightbulbService];
     }
   }, {
-    key: 'getState',
-    value: function () {
-      var _ref = _asyncToGenerator(regeneratorRuntime.mark(function _callee(callback) {
-        var coap, response;
-        return regeneratorRuntime.wrap(function _callee$(_context) {
-          while (1) {
-            switch (_context.prev = _context.next) {
-              case 0:
-                coap = this.platform.coap;
-                _context.next = 3;
-                return coap.get('15001/' + this.device.id);
+    key: 'getData',
+    value: function getData(callback) {
+      var _this = this;
 
-              case 3:
-                response = _context.sent;
-
-                this.rawData = response;
-                this.device = transformData(response);
-
-                callback(null, this.device.state);
-
-              case 7:
-              case 'end':
-                return _context.stop();
-            }
-          }
-        }, _callee, this);
-      }));
-
-      function getState(_x) {
-        return _ref.apply(this, arguments);
+      var coap = this.platform.coap;
+      this.dataCallbacks.push(callback);
+      if (this.loading) {
+        return;
       }
+      this.loading = true;
+      setTimeout(function () {
+        coap.get('15001/' + _this.device.id).then(function (response) {
+          _this.device = transformData(response);
+          _this.loading = false;
 
-      return getState;
-    }()
+          while (_this.dataCallbacks.length > 0) {
+            _this.dataCallbacks.shift()(response);
+          }
+        });
+      }, Math.ceil(Math.random() * 100));
+    }
+  }, {
+    key: 'getState',
+    value: function getState(callback) {
+      var _this2 = this;
+
+      this.getData(function (response) {
+        callback(null, _this2.device.state);
+      });
+    }
   }, {
     key: 'setState',
     value: function setState(state, callback) {
       var coap = this.platform.coap;
+
+      // Sometimes (when using Siri) HomeKit sends bool
+      // value as state, so we need to cast that to int
+      if (typeof state !== 'number') {
+        state = state ? 1 : 0;
+      }
 
       this.device.state = state;
       var data = {
@@ -3608,38 +3614,13 @@ var TradfriAccessory = function () {
     }
   }, {
     key: 'getBrightness',
-    value: function () {
-      var _ref2 = _asyncToGenerator(regeneratorRuntime.mark(function _callee2(callback) {
-        var coap, response;
-        return regeneratorRuntime.wrap(function _callee2$(_context2) {
-          while (1) {
-            switch (_context2.prev = _context2.next) {
-              case 0:
-                coap = this.platform.coap;
-                _context2.next = 3;
-                return coap.get('15001/' + this.device.id);
+    value: function getBrightness(callback) {
+      var _this3 = this;
 
-              case 3:
-                response = _context2.sent;
-
-                this.device = transformData(response);
-
-                callback(null, this.device.brightness);
-
-              case 6:
-              case 'end':
-                return _context2.stop();
-            }
-          }
-        }, _callee2, this);
-      }));
-
-      function getBrightness(_x2) {
-        return _ref2.apply(this, arguments);
-      }
-
-      return getBrightness;
-    }()
+      this.getData(function (response) {
+        callback(null, _this3.device.brightness);
+      });
+    }
   }, {
     key: 'setBrightness',
     value: function setBrightness(brightness, callback) {
@@ -3656,42 +3637,17 @@ var TradfriAccessory = function () {
       };
       coap.put('15001/' + this.device.id, data);
 
-      callback();
+      callback(null);
     }
   }, {
     key: 'getHue',
-    value: function () {
-      var _ref3 = _asyncToGenerator(regeneratorRuntime.mark(function _callee3(callback) {
-        var coap, response;
-        return regeneratorRuntime.wrap(function _callee3$(_context3) {
-          while (1) {
-            switch (_context3.prev = _context3.next) {
-              case 0:
-                coap = this.platform.coap;
-                _context3.next = 3;
-                return coap.get('15001/' + this.device.id);
+    value: function getHue(callback) {
+      var _this4 = this;
 
-              case 3:
-                response = _context3.sent;
-
-                this.device = transformData(response);
-
-                callback(null, this.device.colorX);
-
-              case 6:
-              case 'end':
-                return _context3.stop();
-            }
-          }
-        }, _callee3, this);
-      }));
-
-      function getHue(_x3) {
-        return _ref3.apply(this, arguments);
-      }
-
-      return getHue;
-    }()
+      this.getData(function (response) {
+        callback(null, _this4.device.colorX);
+      });
+    }
   }, {
     key: 'setHue',
     value: function setHue(hue, callback) {
@@ -3707,38 +3663,13 @@ var TradfriAccessory = function () {
     }
   }, {
     key: 'getSaturation',
-    value: function () {
-      var _ref4 = _asyncToGenerator(regeneratorRuntime.mark(function _callee4(callback) {
-        var coap, response;
-        return regeneratorRuntime.wrap(function _callee4$(_context4) {
-          while (1) {
-            switch (_context4.prev = _context4.next) {
-              case 0:
-                coap = this.platform.coap;
-                _context4.next = 3;
-                return coap.get('15001/' + this.device.id);
+    value: function getSaturation(callback) {
+      var _this5 = this;
 
-              case 3:
-                response = _context4.sent;
-
-                this.device = transformData(response);
-
-                callback(null, this.device.colorY);
-
-              case 6:
-              case 'end':
-                return _context4.stop();
-            }
-          }
-        }, _callee4, this);
-      }));
-
-      function getSaturation(_x4) {
-        return _ref4.apply(this, arguments);
-      }
-
-      return getSaturation;
-    }()
+      this.getData(function (response) {
+        callback(null, _this5.device.colorY);
+      });
+    }
   }, {
     key: 'setSaturation',
     value: function setSaturation(saturation, callback) {
@@ -3755,7 +3686,7 @@ var TradfriAccessory = function () {
   }, {
     key: 'updateColor',
     value: function updateColor(hue, saturation) {
-      var _this = this;
+      var _this6 = this;
 
       var coap = this.platform.coap;
       return new Promise(function (resolve, reject) {
@@ -3769,8 +3700,8 @@ var TradfriAccessory = function () {
           return Math.floor(100000 * item);
         });
 
-        _this.device.colorX = cie[0];
-        _this.device.colorY = cie[1];
+        _this6.device.colorX = cie[0];
+        _this6.device.colorY = cie[1];
 
         var data = {
           "3311": [{
@@ -3778,7 +3709,7 @@ var TradfriAccessory = function () {
             "5710": cie[1]
           }]
         };
-        coap.put('15001/' + _this.device.id, data).then(resolve).catch(reject);
+        coap.put('15001/' + _this6.device.id, data).then(resolve).catch(reject);
       });
     }
   }]);

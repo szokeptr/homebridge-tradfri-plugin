@@ -6,7 +6,7 @@ export class TradfriPlatform {
   constructor(log, config) {
     this.log = log;
     this.config = config;
-  
+
     this.coap = new Coap(config.host, 'Client_identity', config.key);
 
     this.bridge = {};

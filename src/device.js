@@ -60,6 +60,9 @@ export default class TradfriAccessory {
 
     this.device = transformData(accessory);
     this.name = this.device.name;
+
+    this.loading = false;
+    this.dataCallbacks = [];
   }
 
   identify(callback) {
@@ -101,18 +104,41 @@ export default class TradfriAccessory {
     return [accessoryInfo, lightbulbService];
   }
 
-  async getState(callback) {
+  getData(callback) {
     const coap = this.platform.coap;
+    this.dataCallbacks.push(callback);
+    if (this.loading) {
+      return;
+    }
+    this.loading = true;
+    setTimeout(() => {
+      coap.get(`15001/${ this.device.id }`).then(response => {
+        this.device = transformData(response);
+        this.loading = false;
 
-    const response = await coap.get(`15001/${ this.device.id }`);
-    this.rawData = response;
-    this.device = transformData(response);
+        while (this.dataCallbacks.length > 0) {
+          this.dataCallbacks.shift()(response);
+        }
+      });
+    }, Math.ceil(Math.random() * 100));
 
-    callback(null, this.device.state);
+  }
+
+  getState(callback) {
+    this.getData(response => {
+      callback(null, this.device.state);
+    });
   }
 
   setState(state, callback) {
     const coap = this.platform.coap;
+
+    // Sometimes (when using Siri) HomeKit sends bool
+    // value as state, so we need to cast that to int
+    // See: https://github.com/szokeptr/homebridge-tradfri-plugin/issues/4#issue-222257475
+    if (typeof state !== 'number') {
+      state = state ? 1 : 0;
+    }
 
     this.device.state = state;
     const data = {
@@ -125,13 +151,10 @@ export default class TradfriAccessory {
     callback();
   }
 
-  async getBrightness(callback) {
-    const coap = this.platform.coap;
-
-    const response = await coap.get(`15001/${ this.device.id }`);
-    this.device = transformData(response);
-
-    callback(null, this.device.brightness);
+  getBrightness(callback) {
+    this.getData(response => {
+      callback(null, this.device.brightness);
+    });
   }
 
   setBrightness(brightness, callback) {
@@ -148,16 +171,13 @@ export default class TradfriAccessory {
     };
     coap.put(`15001/${ this.device.id }`, data);
 
-    callback();
+    callback(null);
   }
 
-  async getHue(callback) {
-    const coap = this.platform.coap;
-
-    const response = await coap.get(`15001/${ this.device.id }`);
-    this.device = transformData(response);
-
-    callback(null, this.device.colorX);
+  getHue(callback) {
+    this.getData(response => {
+      callback(null, this.device.colorX);
+    });
   }
 
   setHue(hue, callback) {
@@ -172,13 +192,10 @@ export default class TradfriAccessory {
     callback();
   }
 
-  async getSaturation(callback) {
-    const coap = this.platform.coap;
-
-    const response = await coap.get(`15001/${ this.device.id }`);
-    this.device = transformData(response);
-
-    callback(null, this.device.colorY);
+  getSaturation(callback) {
+    this.getData(response => {
+      callback(null, this.device.colorY);
+    });
   }
 
   setSaturation(saturation, callback) {
