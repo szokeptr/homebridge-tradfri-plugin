@@ -3390,7 +3390,7 @@ var Coap = function () {
 
       return new Promise(function (resolve, reject) {
         var coapCmd = 'coap-client -u \'' + _this.username + '\' -k \'' + _this.key + '\' -B 5 coaps://' + _this.host + ':5684/' + path;
-        console.log(coapCmd);
+        // console.log(coapCmd);
         setTimeout(function () {
           exec(coapCmd, execConfig, function (error, stdout, stderr) {
             if (error) {
@@ -3421,7 +3421,7 @@ var Coap = function () {
         var jsonData = JSON.stringify(data);
 
         var coapCmd = 'coap-client -u \'' + _this2.username + '\' -k \'' + _this2.key + '\' -B 5 -m PUT -e \'' + jsonData + '\' coaps://' + _this2.host + ':5684/' + path;
-        console.log(coapCmd);
+        // console.log(coapCmd);
         exec(coapCmd, execConfig, function (error, stdout, stderr) {
           if (error) {
             reject(error);
@@ -3598,6 +3598,7 @@ var TradfriAccessory = function () {
 
       // Sometimes (when using Siri) HomeKit sends bool
       // value as state, so we need to cast that to int
+      // See: https://github.com/szokeptr/homebridge-tradfri-plugin/issues/4#issue-222257475
       if (typeof state !== 'number') {
         state = state ? 1 : 0;
       }

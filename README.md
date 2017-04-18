@@ -1,5 +1,7 @@
 # homebridge-tradfri-plugin
 
+[![npm version](https://badge.fury.io/js/homebridge-tradfri-plugin.svg)](https://badge.fury.io/js/homebridge-tradfri-plugin)
+
 Ikea Tradfri Gateway plugin for [Homebridge](https://github.com/nfarina/homebridge).
 
 Supported features:
@@ -7,6 +9,7 @@ Supported features:
 - turn on and off the lightbulbs
 - adjust brightness
 - adjust color temperature (far from perfect, better solutions than estimating the temperature from hue/saturation are welcome!)
+- NEW: color temperature can be adjusted gradually, not just the 3 predefined values.
 
 ![Brightness](https://pter.co/p/tradfri/brightness.PNG)
 ![Color](https://pter.co/p/tradfri/color.PNG)
@@ -55,6 +58,12 @@ Of course, you will need to add the IP address of the Ikea gateway and the key, 
 # Contributing
 
 The source can be found in the `src/` folder. The project is using webpack to transpile and bundle the source files. The configuration should work out of the box, you just need to run `webpack` to get it bundled. Don't forget to install the devDependencies too!
+
+# Todo
+
+- replace webpack for better development flow
+- improve color temperature conversion
+- tests
 
 # Credit
 
