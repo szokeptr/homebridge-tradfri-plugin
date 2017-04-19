@@ -1,7 +1,3 @@
-const Characteristic = homebridge.hap.Characteristic;
-const Accessory = homebridge.platformAccessory;
-const Service = homebridge.hap.Service;
-
 const transformData = data => {
   return {
     id: data['9003'],
@@ -10,7 +6,10 @@ const transformData = data => {
     state: data['3311'][0]['5850'],
     brightness: Math.round(data['3311'][0]['5851'] / 254 * 100),
     colorX: data['3311'][0]['5709'],
-    colorY: data['3311'][0]['5710']
+    colorY: data['3311'][0]['5710'],
+    color: {
+      hue: null
+    }
   }
 };
 
@@ -64,66 +63,45 @@ export default class TradfriAccessory {
 
     this.loading = false;
     this.dataCallbacks = [];
-
-    // subscribe to changes
-    this.subscribe();
   }
 
-  identify(paired, callback) {
+  identify(callback) {
     callback(this.device.name);
   }
 
   getServices() {
 
+    const Characteristic = this.platform.bridge.Characteristic;
+    const accessoryInfo = new this.platform.bridge.Service.AccessoryInformation();
 
-    this.accessoryInfo = new Service.AccessoryInformation();
-
-    this.accessoryInfo
+    accessoryInfo
       .setCharacteristic(Characteristic.Name, this.device.name)
       .setCharacteristic(Characteristic.Manufacturer, this.device.manufacturer)
       .setCharacteristic(Characteristic.Model, "Tradfri");
 
-    this.service = new Service.Lightbulb(this.device.name);
+    const lightbulbService = new this.platform.bridge.Service.Lightbulb(this.device.name);
 
-    this.service
+    lightbulbService
       .getCharacteristic(Characteristic.On)
       .on('get', this.getState.bind(this))
       .on('set', this.setState.bind(this));
 
-    this.service
+    lightbulbService
       .getCharacteristic(Characteristic.Brightness)
       .on('get', this.getBrightness.bind(this))
       .on('set', this.setBrightness.bind(this));
 
-    this.service
+    lightbulbService
       .getCharacteristic(Characteristic.Hue)
       .on('get', this.getHue.bind(this))
       .on('set', this.setHue.bind(this));
 
-    this.service
+    lightbulbService
       .getCharacteristic(Characteristic.Saturation)
       .on('get', this.getSaturation.bind(this))
       .on('set', this.setSaturation.bind(this));
 
-    return [this.accessoryInfo, this.service];
-  }
-
-  subscribe() {
-    const coap = this.platform.coap;
-
-    coap.subscribe(`15001/${ this.device.id }`, (data) => {
-      const newData = transformData(data);
-
-      if (newData.state !== this.device.state) {
-        this.device = newData;
-        this.service.updateCharacteristic(Characteristic.On, newData.state === 1 ? true : false);
-      }
-      if (newData.brightness !== this.device.brightness) {
-        this.device = newData;
-        this.service.updateCharacteristic(Characteristic.Brightness, newData.brightness);
-      }
-
-    });
+    return [accessoryInfo, lightbulbService];
   }
 
   getData(callback) {
@@ -139,11 +117,7 @@ export default class TradfriAccessory {
         this.loading = false;
 
         while (this.dataCallbacks.length > 0) {
-          this.dataCallbacks.shift()(this.device);
-        }
-      }).catch(e => {
-        while (this.dataCallbacks.length > 0) {
-          this.dataCallbacks.shift()();
+          this.dataCallbacks.shift()(response);
         }
       });
     }, Math.ceil(Math.random() * 100));
@@ -240,14 +214,12 @@ export default class TradfriAccessory {
     const coap = this.platform.coap;
     return new Promise((resolve, reject) => {
       // First we convert hue and saturation
-      // to RGB, with 75% lightness
+      // to RGB, with 75% lighntess
       const rgb = hslToRgb(hue, saturation, 0.75);
       // Then we convert the rgb values to
       // CIE L*a*b XY values
       const cie = rgbToXy(...rgb).map(item => {
         // we need to scale the values
-        // for some reason 100000 works fine
-        // but actually 2^16 should be used
         return Math.floor(100000 * item);
       });
 

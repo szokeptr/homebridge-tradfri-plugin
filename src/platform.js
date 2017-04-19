@@ -8,7 +8,14 @@ export class TradfriPlatform {
     this.config = config;
 
     this.coap = new Coap(config.host, 'Client_identity', config.key);
-    
+
+    this.bridge = {};
+
+    this.bridge.Accessory = homebridge.platformAccessory;
+    this.bridge.Service = homebridge.hap.Service;
+    this.bridge.Characteristic = homebridge.hap.Characteristic;
+    // this.bridge.Characteristic = homebridge.hap.Characteristic;
+    // this.bridge.UUIDGen = homebridge.hap.uuid;
   }
 
   async accessories(callback) {
