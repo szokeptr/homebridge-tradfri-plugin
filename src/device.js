@@ -119,6 +119,12 @@ export default class TradfriAccessory {
         while (this.dataCallbacks.length > 0) {
           this.dataCallbacks.shift()(response);
         }
+      })
+      .catch(err => {
+        this.loading = false;
+        while (this.dataCallbacks.length > 0) {
+          this.dataCallbacks.shift()(this.device);
+        }
       });
     }, Math.ceil(Math.random() * 100));
 
@@ -186,7 +192,7 @@ export default class TradfriAccessory {
     if (typeof newColor.s !== 'undefined') {
       this.updateColor(newColor.h, newColor.s).then(() => {
         newColor = {};
-      });
+      }).catch(callback);
     }
 
     callback();
@@ -204,7 +210,7 @@ export default class TradfriAccessory {
     if (typeof newColor.h !== 'undefined') {
       this.updateColor(newColor.h, newColor.s).then(() => {
         newColor = {};
-      });
+      }).catch(callback);
     }
 
     callback();

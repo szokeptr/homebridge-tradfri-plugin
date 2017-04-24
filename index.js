@@ -3579,6 +3579,11 @@ var TradfriAccessory = function () {
           while (_this.dataCallbacks.length > 0) {
             _this.dataCallbacks.shift()(response);
           }
+        }).catch(function (err) {
+          _this.loading = false;
+          while (_this.dataCallbacks.length > 0) {
+            _this.dataCallbacks.shift()(_this.device);
+          }
         });
       }, Math.ceil(Math.random() * 100));
     }
@@ -3657,7 +3662,7 @@ var TradfriAccessory = function () {
       if (typeof newColor.s !== 'undefined') {
         this.updateColor(newColor.h, newColor.s).then(function () {
           newColor = {};
-        });
+        }).catch(callback);
       }
 
       callback();
@@ -3679,7 +3684,7 @@ var TradfriAccessory = function () {
       if (typeof newColor.h !== 'undefined') {
         this.updateColor(newColor.h, newColor.s).then(function () {
           newColor = {};
-        });
+        }).catch(callback);
       }
 
       callback();
