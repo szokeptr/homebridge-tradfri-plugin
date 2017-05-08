@@ -11,8 +11,7 @@ Supported features:
 - adjust color temperature (far from perfect, better solutions than estimating the temperature from hue/saturation are welcome!)
 - NEW: color temperature can be adjusted gradually, not just the 3 predefined values.
 
-![Brightness](https://pter.co/p/tradfri/brightness.PNG)
-![Color](https://pter.co/p/tradfri/color.PNG)
+![Brightness and Color](http://oo00oo.pw/media/tradfri-screenshots.png)
 
 # Dependencies
 
