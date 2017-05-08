@@ -1,3 +1,5 @@
+import Logger from '../lib/Logger.js';
+
 const transformData = data => {
   return {
     id: data['9003'],
@@ -55,7 +57,7 @@ const rgbToXy = (red,green,blue) => {
 let newColor = {};
 
 export default class TradfriAccessory {
-  constructor(accessory, platform) {
+  constructor(accessory, platform, log) {
     this.platform = platform;
 
     this.device = transformData(accessory);
@@ -63,6 +65,12 @@ export default class TradfriAccessory {
 
     this.loading = false;
     this.dataCallbacks = [];
+
+    if (typeof log === 'undefined') {
+      this.log = new Logger;
+    } else {
+      this.log = log;
+    }
   }
 
   identify(callback) {
@@ -121,6 +129,7 @@ export default class TradfriAccessory {
         }
       })
       .catch(err => {
+        console.log('got an error: ', err);
         this.loading = false;
         while (this.dataCallbacks.length > 0) {
           this.dataCallbacks.shift()(this.device);
@@ -192,7 +201,10 @@ export default class TradfriAccessory {
     if (typeof newColor.s !== 'undefined') {
       this.updateColor(newColor.h, newColor.s).then(() => {
         newColor = {};
-      }).catch(callback);
+      }).catch(() => {
+        console.log('Error setting hue');
+        callback();
+      });
     }
 
     callback();
