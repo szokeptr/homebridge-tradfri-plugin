@@ -10,6 +10,7 @@ Supported features:
 - adjust brightness
 - adjust color temperature (far from perfect, better solutions than estimating the temperature from hue/saturation are welcome!)
 - NEW: color temperature can be adjusted gradually, not just the 3 predefined values.
+- NEW: The plugin now detects changes that happen outside of HomeKit, so you can use your remote controls and still have HomeKit in sync.
 
 ![Brightness and Color](http://oo00oo.pw/media/tradfri-screenshots.png)
 
