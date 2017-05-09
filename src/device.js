@@ -61,7 +61,7 @@ export default class TradfriAccessory {
     this.platform = platform;
 
     this.device = transformData(accessory);
-    this.name = this.device.name;
+    this.name = `${ this.device.name } - ${ this.device.id }`;
 
     this.loading = false;
     this.dataCallbacks = [];
@@ -99,15 +99,21 @@ export default class TradfriAccessory {
       .on('get', this.getBrightness.bind(this))
       .on('set', this.setBrightness.bind(this));
 
-    lightbulbService
-      .getCharacteristic(Characteristic.Hue)
-      .on('get', this.getHue.bind(this))
-      .on('set', this.setHue.bind(this));
+    if (typeof this.device.colorX !== 'undefined') {
+      lightbulbService
+        .getCharacteristic(Characteristic.Hue)
+        .on('get', this.getHue.bind(this))
+        .on('set', this.setHue.bind(this));
 
-    lightbulbService
-      .getCharacteristic(Characteristic.Saturation)
-      .on('get', this.getSaturation.bind(this))
-      .on('set', this.setSaturation.bind(this));
+      lightbulbService
+        .getCharacteristic(Characteristic.Saturation)
+        .on('get', this.getSaturation.bind(this))
+        .on('set', this.setSaturation.bind(this));
+    }
+
+
+
+
 
     return [accessoryInfo, lightbulbService];
   }

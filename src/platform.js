@@ -15,7 +15,7 @@ export class TradfriPlatform {
     this.bridge.Service = homebridge.hap.Service;
     this.bridge.Characteristic = homebridge.hap.Characteristic;
     // this.bridge.Characteristic = homebridge.hap.Characteristic;
-    // this.bridge.UUIDGen = homebridge.hap.uuid;
+    this.bridge.uuid = homebridge.hap.uuid;
   }
 
   async accessories(callback) {
@@ -41,7 +41,11 @@ export class TradfriPlatform {
           accessories.push(new TradfriDevice(device, this, this.log));
         }
       } catch (e) {
-        this.log.error(e);
+        if (e.signal === 'SIGTERM') {
+          this.log.error(`Command timed out: ${ e.cmd }`);
+        } else {
+          this.log.error(`Failed to update device id: ${ deviceId }`);
+        }
       }
 
     }

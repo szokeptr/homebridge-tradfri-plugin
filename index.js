@@ -3367,7 +3367,7 @@ function _classCallCheck(instance, Constructor) { if (!(instance instanceof Cons
 var exec = __webpack_require__(85).exec;
 
 var execConfig = {
-  timeout: 10000
+  timeout: 2000
 };
 
 var Coap = function () {
@@ -3427,19 +3427,11 @@ var Coap = function () {
         // console.log(coapCmd);
         exec(coapCmd, execConfig, function (error, stdout, stderr) {
           if (error) {
+            console.log(error);
             reject(error);
             return;
           }
-
-          var split = stdout.trim().split("\n");
-          var json = split.pop();
-
-          try {
-            var response = JSON.parse(json);
-            resolve(response);
-          } catch (e) {
-            reject(e);
-          }
+          resolve();
         });
       });
     }
@@ -3572,7 +3564,7 @@ var TradfriAccessory = function () {
     this.platform = platform;
 
     this.device = transformData(accessory);
-    this.name = this.device.name;
+    this.name = this.device.name + ' - ' + this.device.id;
 
     this.loading = false;
     this.dataCallbacks = [];
@@ -3604,9 +3596,11 @@ var TradfriAccessory = function () {
 
       lightbulbService.getCharacteristic(Characteristic.Brightness).on('get', this.getBrightness.bind(this)).on('set', this.setBrightness.bind(this));
 
-      lightbulbService.getCharacteristic(Characteristic.Hue).on('get', this.getHue.bind(this)).on('set', this.setHue.bind(this));
+      if (typeof this.device.colorX !== 'undefined') {
+        lightbulbService.getCharacteristic(Characteristic.Hue).on('get', this.getHue.bind(this)).on('set', this.setHue.bind(this));
 
-      lightbulbService.getCharacteristic(Characteristic.Saturation).on('get', this.getSaturation.bind(this)).on('set', this.setSaturation.bind(this));
+        lightbulbService.getCharacteristic(Characteristic.Saturation).on('get', this.getSaturation.bind(this)).on('set', this.setSaturation.bind(this));
+      }
 
       return [accessoryInfo, lightbulbService];
     }
@@ -3823,7 +3817,7 @@ var TradfriPlatform = exports.TradfriPlatform = function () {
     this.bridge.Service = homebridge.hap.Service;
     this.bridge.Characteristic = homebridge.hap.Characteristic;
     // this.bridge.Characteristic = homebridge.hap.Characteristic;
-    // this.bridge.UUIDGen = homebridge.hap.uuid;
+    this.bridge.uuid = homebridge.hap.uuid;
   }
 
   _createClass(TradfriPlatform, [{
@@ -3892,7 +3886,11 @@ var TradfriPlatform = exports.TradfriPlatform = function () {
                 _context.prev = 27;
                 _context.t1 = _context['catch'](20);
 
-                this.log.error(_context.t1);
+                if (_context.t1.signal === 'SIGTERM') {
+                  this.log.error('Command timed out: ' + _context.t1.cmd);
+                } else {
+                  this.log.error('Failed to update device id: ' + deviceId);
+                }
 
               case 30:
                 _iteratorNormalCompletion = true;
