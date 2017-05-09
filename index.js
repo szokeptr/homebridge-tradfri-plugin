@@ -3364,10 +3364,12 @@ function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { de
 
 function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
 
-var exec = __webpack_require__(85).exec;
+var child_process = __webpack_require__(85);
+var exec = child_process.exec;
+var spawn = child_process.spawn;
 
 var execConfig = {
-  timeout: 1000
+  timeout: 5000
 };
 
 var Coap = function () {
@@ -3425,14 +3427,38 @@ var Coap = function () {
 
         var coapCmd = 'coap-client -u \'' + _this2.username + '\' -k \'' + _this2.key + '\' -B 5 -m PUT -e \'' + jsonData + '\' coaps://' + _this2.host + ':5684/' + path;
         // console.log(coapCmd);
-        exec(coapCmd, execConfig, function (error, stdout, stderr) {
-          if (error) {
-            console.log(error);
-            reject(error);
-            return;
-          }
-          resolve();
-        });
+        setTimeout(function () {
+          exec(coapCmd, execConfig, function (error, stdout, stderr) {
+            if (error) {
+              console.log(error);
+              reject(error);
+              return;
+            }
+            resolve();
+          });
+        }, Math.ceil(100 * Math.random() + 75));
+      });
+    }
+  }, {
+    key: 'subscribe',
+    value: function subscribe(path, callback) {
+      var _this3 = this;
+
+      var resourceUrl = 'coaps://' + this.host + ':5684/' + path;
+
+      var process = spawn('coap-client', ['-u', this.username, '-k', this.key, '-m', 'get', '-s', '120', resourceUrl]);
+
+      process.stdout.on('data', function (stdout) {
+        var split = stdout.toString().trim().split("\n");
+        var json = split.pop();
+
+        try {
+          var response = JSON.parse(json);
+          callback(response);
+        } catch (e) {}
+      });
+      process.on('close', function (code) {
+        _this3.subscribe(path, callback);
       });
     }
   }]);
@@ -3509,11 +3535,36 @@ var transformData = function transformData(data) {
     state: data['3311'][0]['5850'],
     brightness: Math.round(data['3311'][0]['5851'] / 254 * 100),
     colorX: data['3311'][0]['5709'],
-    colorY: data['3311'][0]['5710'],
-    color: {
-      hue: null
-    }
+    colorY: data['3311'][0]['5710']
   };
+};
+
+var xToHue = function xToHue(x) {
+  switch (x) {
+    case 29600:
+      // cold
+      return 0.616 * 360;
+    case 44200:
+      // warm
+      return 0.0833 * 360;
+    default:
+      // neutral
+      return 0.833 * 360;
+  }
+};
+
+var yToSaturation = function yToSaturation(y) {
+  switch (y) {
+    case 30340:
+      // cold
+      return 0.2 * 100;
+    case 37770:
+      // warm
+      return 0.76 * 100;
+    default:
+      // neutral
+      return 0.02 * 100;
+  }
 };
 
 // Source: http://stackoverflow.com/a/9493060
@@ -3574,6 +3625,8 @@ var TradfriAccessory = function () {
     } else {
       this.log = log;
     }
+
+    this.subscribe();
   }
 
   _createClass(TradfriAccessory, [{
@@ -3590,7 +3643,7 @@ var TradfriAccessory = function () {
 
       accessoryInfo.setCharacteristic(Characteristic.Name, this.device.name).setCharacteristic(Characteristic.Manufacturer, this.device.manufacturer).setCharacteristic(Characteristic.Model, "Tradfri");
 
-      var lightbulbService = new this.platform.bridge.Service.Lightbulb(this.device.name);
+      var lightbulbService = this.service = new this.platform.bridge.Service.Lightbulb(this.device.name);
 
       lightbulbService.getCharacteristic(Characteristic.On).on('get', this.getState.bind(this)).on('set', this.setState.bind(this));
 
@@ -3605,56 +3658,50 @@ var TradfriAccessory = function () {
       return [accessoryInfo, lightbulbService];
     }
   }, {
-    key: 'getData',
-    value: function getData(callback) {
+    key: 'subscribe',
+    value: function subscribe() {
       var _this = this;
 
       var coap = this.platform.coap;
-      this.dataCallbacks.push(callback);
-      if (this.loading) {
-        return;
+      coap.subscribe('15001/' + this.device.id, function (data) {
+        _this.handleChanges(transformData(data));
+      });
+    }
+  }, {
+    key: 'handleChanges',
+    value: function handleChanges(data) {
+      var Characteristic = this.platform.bridge.Characteristic;
+      if (data.state !== this.device.state) {
+        this.device.state = data.state;
+        this.service.updateCharacteristic(Characteristic.On, data.state === 1 ? true : false);
       }
-      this.loading = true;
-      setTimeout(function () {
-        coap.get('15001/' + _this.device.id).then(function (response) {
-          _this.device = transformData(response);
-          _this.loading = false;
-
-          while (_this.dataCallbacks.length > 0) {
-            _this.dataCallbacks.shift()(response);
-          }
-        }).catch(function (err) {
-          _this.loading = false;
-          while (_this.dataCallbacks.length > 0) {
-            _this.dataCallbacks.shift()();
-          }
-        });
-      }, Math.ceil(Math.random() * 50));
+      if (data.brightness !== this.device.brightness) {
+        this.device.brightness = data.brightness;
+        this.service.updateCharacteristic(Characteristic.Brightness, data.brightness);
+      }
     }
   }, {
     key: 'getState',
     value: function getState(callback) {
-      var _this2 = this;
-
-      this.getData(function (response) {
-        callback(null, _this2.device.state);
-      });
+      callback(null, this.device.state);
     }
   }, {
     key: 'setState',
     value: function setState(state, callback) {
-      var _this3 = this;
+      var _this2 = this;
 
       var coap = this.platform.coap;
 
-      // Sometimes (when using Siri) HomeKit sends bool
+      // Sometimes (when using Siri) HomeKit sends boolean
       // value as state, so we need to cast that to int
       // See: https://github.com/szokeptr/homebridge-tradfri-plugin/issues/4#issue-222257475
       if (typeof state !== 'number') {
         state = state ? 1 : 0;
       }
+
+      // Check if state has actually changed
       if (this.device.state === state) {
-        callback();
+        callback(null);
         return;
       }
       this.device.state = state;
@@ -3663,30 +3710,31 @@ var TradfriAccessory = function () {
           "5850": state
         }]
       };
-      coap.put('15001/' + this.device.id, data).catch(function (err) {
-        _this3.log.error('Error setting state');
+      coap.put('15001/' + this.device.id, data).then(function () {
+        callback(null);
+      }).catch(function (err) {
+        _this2.log.error('Error setting state');
+        callback(null);
       });
-
-      callback();
     }
   }, {
     key: 'getBrightness',
     value: function getBrightness(callback) {
-      var _this4 = this;
-
-      this.getData(function (response) {
-        callback(null, _this4.device.brightness);
-      });
+      callback(null, this.device.brightness);
     }
   }, {
     key: 'setBrightness',
     value: function setBrightness(brightness, callback) {
-      var _this5 = this;
+      var _this3 = this;
 
       var coap = this.platform.coap;
 
       if (brightness > 0) {
         this.device.state = 1;
+      }
+      if (this.device.brightness === brightness) {
+        callback(null);
+        return;
       }
       this.device.brightness = brightness;
       var data = {
@@ -3694,73 +3742,65 @@ var TradfriAccessory = function () {
           "5851": Math.round(brightness * 2.54)
         }]
       };
-      coap.put('15001/' + this.device.id, data).catch(function (err) {
-        //if (err.)
-        _this5.log.error('Error setting brightness');
+      coap.put('15001/' + this.device.id, data).then(function () {
+        callback(null);
+      }).catch(function (err) {
+        _this3.log.error('Error setting brightness');
+        callback(err);
       });
-
-      callback(null);
     }
   }, {
     key: 'getHue',
     value: function getHue(callback) {
-      var _this6 = this;
-
-      this.getData(function (response) {
-        callback(null, _this6.device.colorX);
-      });
+      callback(null, xToHue(this.device.colorX));
     }
   }, {
     key: 'setHue',
     value: function setHue(hue, callback) {
-      var _this7 = this;
+      var _this4 = this;
 
       newColor.h = hue / 360;
 
       if (typeof newColor.s !== 'undefined') {
         this.updateColor(newColor.h, newColor.s).then(function () {
           newColor = {};
-          callback();
-        }).catch(function () {
-          _this7.log.error('Error setting color');
-          callback();
+          callback(null);
+        }).catch(function (err) {
+          _this4.log.error('Error setting color, possibly out of range');
+          callback(err);
         });
       } else {
-        callback();
+        callback(null);
       }
     }
   }, {
     key: 'getSaturation',
     value: function getSaturation(callback) {
-      var _this8 = this;
-
-      this.getData(function (response) {
-        callback(null, _this8.device.colorY);
-      });
+      callback(null, this.device.colorY);
     }
   }, {
     key: 'setSaturation',
     value: function setSaturation(saturation, callback) {
-      var _this9 = this;
+      var _this5 = this;
 
       newColor.s = saturation / 100;
 
       if (typeof newColor.h !== 'undefined') {
         this.updateColor(newColor.h, newColor.s).then(function () {
           newColor = {};
-          callback();
+          callback(null);
         }).catch(function (err) {
-          _this9.log.error('Error setting color');
-          callback();
+          _this5.log.error('Error setting color, possibly out of range');
+          callback(err);
         });
       } else {
-        callback();
+        callback(null);
       }
     }
   }, {
     key: 'updateColor',
     value: function updateColor(hue, saturation) {
-      var _this10 = this;
+      var _this6 = this;
 
       var coap = this.platform.coap;
       return new Promise(function (resolve, reject) {
@@ -3774,8 +3814,8 @@ var TradfriAccessory = function () {
           return Math.floor(100000 * item);
         });
 
-        _this10.device.colorX = cie[0];
-        _this10.device.colorY = cie[1];
+        _this6.device.colorX = cie[0];
+        _this6.device.colorY = cie[1];
 
         var data = {
           "3311": [{
@@ -3783,7 +3823,7 @@ var TradfriAccessory = function () {
             "5710": cie[1]
           }]
         };
-        coap.put('15001/' + _this10.device.id, data).then(resolve).catch(reject);
+        coap.put('15001/' + _this6.device.id, data).then(resolve).catch(reject);
       });
     }
   }]);
@@ -3909,7 +3949,7 @@ var TradfriPlatform = exports.TradfriPlatform = function () {
                 if (_context.t1.signal === 'SIGTERM') {
                   this.log.error('Command timed out: ' + _context.t1.cmd);
                 } else {
-                  this.log.error('Failed to update device id: ' + deviceId);
+                  this.log.error('Failed to get device id: ' + deviceId);
                 }
 
               case 30:

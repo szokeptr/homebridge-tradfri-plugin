@@ -44,7 +44,7 @@ export class TradfriPlatform {
         if (e.signal === 'SIGTERM') {
           this.log.error(`Command timed out: ${ e.cmd }`);
         } else {
-          this.log.error(`Failed to update device id: ${ deviceId }`);
+          this.log.error(`Failed to get device id: ${ deviceId }`);
         }
       }
 

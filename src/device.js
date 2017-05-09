@@ -9,11 +9,36 @@ const transformData = data => {
     brightness: Math.round(data['3311'][0]['5851'] / 254 * 100),
     colorX: data['3311'][0]['5709'],
     colorY: data['3311'][0]['5710'],
-    color: {
-      hue: null
-    }
   }
 };
+
+const xToHue = x => {
+  switch (x) {
+    case 29600:
+      // cold
+      return 0.616 * 360;
+    case 44200:
+      // warm
+      return 0.0833 * 360;
+    default:
+      // neutral
+      return 0.833 * 360;
+  }
+};
+
+const yToSaturation = y => {
+  switch (y) {
+    case 30340:
+      // cold
+      return 0.2 * 100;
+    case 37770:
+      // warm
+      return 0.76 * 100;
+    default:
+      // neutral
+      return 0.02 * 100;
+  }
+}
 
 // Source: http://stackoverflow.com/a/9493060
 const hslToRgb = (h, s, l) => {
@@ -64,13 +89,14 @@ export default class TradfriAccessory {
     this.name = `${ this.device.name } - ${ this.device.id }`;
 
     this.loading = false;
-    this.dataCallbacks = [];
 
     if (typeof log === 'undefined') {
       this.log = new Logger;
     } else {
       this.log = log;
     }
+
+    this.subscribe();
   }
 
   identify(callback) {
@@ -87,7 +113,7 @@ export default class TradfriAccessory {
       .setCharacteristic(Characteristic.Manufacturer, this.device.manufacturer)
       .setCharacteristic(Characteristic.Model, "Tradfri");
 
-    const lightbulbService = new this.platform.bridge.Service.Lightbulb(this.device.name);
+    const lightbulbService = this.service = new this.platform.bridge.Service.Lightbulb(this.device.name);
 
     lightbulbService
       .getCharacteristic(Characteristic.On)
@@ -114,49 +140,42 @@ export default class TradfriAccessory {
     return [accessoryInfo, lightbulbService];
   }
 
-  getData(callback) {
+  subscribe() {
     const coap = this.platform.coap;
-    this.dataCallbacks.push(callback);
-    if (this.loading) {
-      return;
+    coap.subscribe(`15001/${ this.device.id }`, data => {
+      this.handleChanges(transformData(data));
+    });
+  }
+
+  handleChanges(data) {
+    const Characteristic = this.platform.bridge.Characteristic;
+    if (data.state !== this.device.state) {
+      this.device.state = data.state;
+      this.service.updateCharacteristic(Characteristic.On, data.state === 1 ? true : false);
     }
-    this.loading = true;
-    setTimeout(() => {
-      coap.get(`15001/${ this.device.id }`).then(response => {
-        this.device = transformData(response);
-        this.loading = false;
-
-        while (this.dataCallbacks.length > 0) {
-          this.dataCallbacks.shift()(response);
-        }
-      })
-      .catch(err => {
-        this.loading = false;
-        while (this.dataCallbacks.length > 0) {
-          this.dataCallbacks.shift()();
-        }
-      });
-    }, Math.ceil(Math.random() * 50));
-
+    if (data.brightness !== this.device.brightness) {
+      this.device.brightness = data.brightness;
+      this.service.updateCharacteristic(Characteristic.Brightness, data.brightness);
+    }
   }
 
   getState(callback) {
-    this.getData(response => {
-      callback(null, this.device.state);
-    });
+    callback(null, this.device.state);
   }
 
   setState(state, callback) {
     const coap = this.platform.coap;
 
-    // Sometimes (when using Siri) HomeKit sends bool
+    // Sometimes (when using Siri) HomeKit sends boolean
     // value as state, so we need to cast that to int
     // See: https://github.com/szokeptr/homebridge-tradfri-plugin/issues/4#issue-222257475
     if (typeof state !== 'number') {
       state = state ? 1 : 0;
     }
+
+    // Check if state has actually changed
     if (this.device.state === state) {
-      callback();
+      callback(null);
       return;
     }
     this.device.state = state;
@@ -165,17 +184,16 @@ export default class TradfriAccessory {
         "5850": state,
       }]
     };
-    coap.put(`15001/${ this.device.id }`, data).catch(err => {
+    coap.put(`15001/${ this.device.id }`, data).then(() => {
+      callback(null);
+    }).catch(err => {
       this.log.error('Error setting state');
+      callback(null);
     });
-
-    callback();
   }
 
   getBrightness(callback) {
-    this.getData(response => {
-      callback(null, this.device.brightness);
-    });
+    callback(null, this.device.brightness);
   }
 
   setBrightness(brightness, callback) {
@@ -184,24 +202,26 @@ export default class TradfriAccessory {
     if (brightness > 0) {
       this.device.state = 1;
     }
+    if (this.device.brightness === brightness) {
+      callback(null);
+      return;
+    }
     this.device.brightness = brightness;
     const data = {
       "3311": [{
         "5851": Math.round(brightness * 2.54),
       }]
     };
-    coap.put(`15001/${ this.device.id }`, data).catch(err => {
-      //if (err.)
+    coap.put(`15001/${ this.device.id }`, data).then(() => {
+      callback(null);
+    }).catch(err => {
       this.log.error('Error setting brightness');
+      callback(null);
     });
-
-    callback(null);
   }
 
   getHue(callback) {
-    this.getData(response => {
-      callback(null, this.device.colorX);
-    });
+    callback(null, xToHue(this.device.colorX));
   }
 
   setHue(hue, callback) {
@@ -210,21 +230,19 @@ export default class TradfriAccessory {
     if (typeof newColor.s !== 'undefined') {
       this.updateColor(newColor.h, newColor.s).then(() => {
         newColor = {};
-        callback();
-      }).catch(() => {
-        this.log.error('Error setting color');
-        callback();
+        callback(null);
+      }).catch(err => {
+        this.log.error('Error setting color, possibly out of range');
+        callback(err);
       });
     } else {
-      callback();
+      callback(null);
     }
 
   }
 
   getSaturation(callback) {
-    this.getData(response => {
-      callback(null, this.device.colorY);
-    });
+    callback(null, this.device.colorY);
   }
 
   setSaturation(saturation, callback) {
@@ -233,13 +251,13 @@ export default class TradfriAccessory {
     if (typeof newColor.h !== 'undefined') {
       this.updateColor(newColor.h, newColor.s).then(() => {
         newColor = {};
-        callback();
+        callback(null);
       }).catch(err => {
-        this.log.error('Error setting color');
-        callback();
+        this.log.error('Error setting color, possibly out of range');
+        callback(null);
       });
     } else {
-      callback();
+      callback(null);
     }
   }
 
