@@ -233,7 +233,7 @@ export default class TradfriAccessory {
         callback(null);
       }).catch(err => {
         this.log.error('Error setting color, possibly out of range');
-        callback(err);
+        callback(null);
       });
     } else {
       callback(null);
