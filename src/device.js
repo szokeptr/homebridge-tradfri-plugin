@@ -111,10 +111,6 @@ export default class TradfriAccessory {
         .on('set', this.setSaturation.bind(this));
     }
 
-
-
-
-
     return [accessoryInfo, lightbulbService];
   }
 
@@ -135,13 +131,12 @@ export default class TradfriAccessory {
         }
       })
       .catch(err => {
-        console.log('got an error: ', err);
         this.loading = false;
         while (this.dataCallbacks.length > 0) {
-          this.dataCallbacks.shift()(this.device);
+          this.dataCallbacks.shift()();
         }
       });
-    }, Math.ceil(Math.random() * 100));
+    }, Math.ceil(Math.random() * 50));
 
   }
 
@@ -160,14 +155,19 @@ export default class TradfriAccessory {
     if (typeof state !== 'number') {
       state = state ? 1 : 0;
     }
-
+    if (this.device.state === state) {
+      callback();
+      return;
+    }
     this.device.state = state;
     const data = {
       "3311": [{
         "5850": state,
       }]
     };
-    coap.put(`15001/${ this.device.id }`, data);
+    coap.put(`15001/${ this.device.id }`, data).catch(err => {
+      this.log.error('Error setting state');
+    });
 
     callback();
   }
@@ -190,7 +190,10 @@ export default class TradfriAccessory {
         "5851": Math.round(brightness * 2.54),
       }]
     };
-    coap.put(`15001/${ this.device.id }`, data);
+    coap.put(`15001/${ this.device.id }`, data).catch(err => {
+      //if (err.)
+      this.log.error('Error setting brightness');
+    });
 
     callback(null);
   }
@@ -207,13 +210,15 @@ export default class TradfriAccessory {
     if (typeof newColor.s !== 'undefined') {
       this.updateColor(newColor.h, newColor.s).then(() => {
         newColor = {};
+        callback();
       }).catch(() => {
-        console.log('Error setting hue');
+        this.log.error('Error setting color');
         callback();
       });
+    } else {
+      callback();
     }
 
-    callback();
   }
 
   getSaturation(callback) {
@@ -228,10 +233,14 @@ export default class TradfriAccessory {
     if (typeof newColor.h !== 'undefined') {
       this.updateColor(newColor.h, newColor.s).then(() => {
         newColor = {};
-      }).catch(callback);
+        callback();
+      }).catch(err => {
+        this.log.error('Error setting color');
+        callback();
+      });
+    } else {
+      callback();
     }
-
-    callback();
   }
 
   updateColor(hue, saturation) {
