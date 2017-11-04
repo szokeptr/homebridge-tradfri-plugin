@@ -3297,14 +3297,14 @@ if(new $WeakMap().set((Object.freeze || Object)(tmp), 7).get(tmp) != 7){
 
 
 Object.defineProperty(exports, "__esModule", {
-  value: true
+    value: true
 });
 
 var _platform = __webpack_require__(119);
 
 exports.default = function (homebridgeInstance) {
-  global.homebridge = homebridgeInstance;
-  homebridgeInstance.registerPlatform('homebridge-tradfri', 'IkeaTradfri', _platform.TradfriPlatform);
+    global.homebridge = homebridgeInstance;
+    homebridgeInstance.registerPlatform('homebridge-tradfri', 'IkeaTradfri', _platform.TradfriPlatform);
 };
 
 module.exports = exports['default'];
@@ -3351,7 +3351,7 @@ define(String.prototype, "padRight", "".padEnd);
 
 
 Object.defineProperty(exports, "__esModule", {
-  value: true
+    value: true
 });
 
 var _createClass = function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; }();
@@ -3369,101 +3369,157 @@ var exec = child_process.exec;
 var spawn = child_process.spawn;
 
 var execConfig = {
-  timeout: 5000
+    timeout: 5000
 };
 
 var Coap = function () {
-  function Coap(host, username, key) {
-    _classCallCheck(this, Coap);
+    function Coap(host, username, key) {
+        _classCallCheck(this, Coap);
 
-    (0, _commandExists2.default)('coap-client').catch(function () {
-      throw new Error('[Coap Client] libcoap is not found! Make sure coap-client is available on the command line!');
-    });
-    if (typeof host === 'undefined' || host === null) {
-      throw new Error('[Coap Client] You must specify a valid host!');
+        (0, _commandExists2.default)('coap-client').catch(function () {
+            throw new Error('[Coap Client] libcoap is not found! Make sure coap-client is available on the command line!');
+        });
+        if (typeof host === 'undefined' || host === null) {
+            throw new Error('[Coap Client] You must specify a valid host!');
+        }
+        this.host = host;
+        this.username = username;
+        this.key = key;
+
+        this.session_key = 'homebridge-tradfri-plugin-' + Math.floor(Math.random() * 1000000);
+        this.session_secret = null;
+
+        this.queue = [];
+
+        this._runLoop();
+
+        this._authenticate();
     }
-    this.host = host;
-    this.username = username;
-    this.key = key;
-  }
 
-  _createClass(Coap, [{
-    key: 'get',
-    value: function get(path) {
-      var _this = this;
+    _createClass(Coap, [{
+        key: '_queue',
+        value: function _queue(cb) {
+            typeof cb === 'function' && this.queue.push(cb);
+        }
+    }, {
+        key: '_runLoop',
+        value: function _runLoop() {
+            var _this = this;
 
-      return new Promise(function (resolve, reject) {
-        var coapCmd = 'coap-client -u \'' + _this.username + '\' -k \'' + _this.key + '\' -B 5 coaps://' + _this.host + ':5684/' + path;
-        // console.log(coapCmd);
-        setTimeout(function () {
-          exec(coapCmd, execConfig, function (error, stdout, stderr) {
-            if (error) {
-              console.log(stdout, stderr, coapCmd);
-              reject(error);
-              return;
-            }
+            setInterval(function () {
 
-            var split = stdout.trim().split("\n");
-            var json = split.pop();
+                if (_this.queue.length > 0 && _this.session_secret !== null) {
+                    //console.log('running fn');
+                    var fn = _this.queue.shift();
+                    fn();
+                }
+            }, 20);
+        }
+    }, {
+        key: '_authenticate',
+        value: function _authenticate() {
+            var _this2 = this;
 
-            try {
-              var response = JSON.parse(json);
-              resolve(response);
-            } catch (e) {
-              reject(e);
-            }
-          });
-        }, Math.ceil(100 * Math.random() + 50));
-      });
-    }
-  }, {
-    key: 'put',
-    value: function put(path, data) {
-      var _this2 = this;
+            return new Promise(function (resolve, reject) {
+                var coapCmd = 'coap-client -m post -u "' + _this2.username + '" -k "' + _this2.key + '" -e \'{"9090":"' + _this2.session_key + '"}\' "coaps://' + _this2.host + ':5684/15011/9063"';
 
-      return new Promise(function (resolve, reject) {
+                exec(coapCmd, execConfig, function (error, stdout, stderr) {
+                    if (error) {
+                        reject(error);
+                        return;
+                    }
 
-        var jsonData = JSON.stringify(data);
+                    var split = stdout.trim().split("\n");
+                    var json = split.pop();
+                    try {
+                        var response = JSON.parse(json);
+                        _this2.session_secret = response["9091"];
 
-        var coapCmd = 'coap-client -u \'' + _this2.username + '\' -k \'' + _this2.key + '\' -B 5 -m PUT -e \'' + jsonData + '\' coaps://' + _this2.host + ':5684/' + path;
-        // console.log(coapCmd);
-        setTimeout(function () {
-          exec(coapCmd, execConfig, function (error, stdout, stderr) {
-            if (error) {
-              console.log(error);
-              reject(error);
-              return;
-            }
-            resolve();
-          });
-        }, Math.ceil(100 * Math.random() + 75));
-      });
-    }
-  }, {
-    key: 'subscribe',
-    value: function subscribe(path, callback) {
-      var _this3 = this;
+                        resolve(response);
+                    } catch (e) {
+                        reject(e);
+                    }
+                });
+            });
+        }
+    }, {
+        key: 'get',
+        value: function get(path) {
+            var _this3 = this;
 
-      var resourceUrl = 'coaps://' + this.host + ':5684/' + path;
+            return new Promise(function (resolve, reject) {
 
-      var process = spawn('coap-client', ['-u', this.username, '-k', this.key, '-m', 'get', '-s', '120', resourceUrl]);
+                _this3._queue(function () {
+                    var coapCmd = 'coap-client -u \'' + _this3.session_key + '\' -k \'' + _this3.session_secret + '\' -B 5 coaps://' + _this3.host + ':5684/' + path;
 
-      process.stdout.on('data', function (stdout) {
-        var split = stdout.toString().trim().split("\n");
-        var json = split.pop();
+                    exec(coapCmd, execConfig, function (error, stdout, stderr) {
 
-        try {
-          var response = JSON.parse(json);
-          callback(response);
-        } catch (e) {}
-      });
-      process.on('close', function (code) {
-        _this3.subscribe(path, callback);
-      });
-    }
-  }]);
+                        if (error) {
+                            console.error(stderr);
+                            reject(error);
+                            return;
+                        }
 
-  return Coap;
+                        var split = stdout.trim().split("\n");
+                        var json = split.pop();
+
+                        try {
+                            var response = JSON.parse(json);
+                            resolve(response);
+                        } catch (e) {
+                            reject(e);
+                        }
+                    });
+                });
+            });
+        }
+    }, {
+        key: 'put',
+        value: function put(path, data) {
+            var _this4 = this;
+
+            return new Promise(function (resolve, reject) {
+
+                var jsonData = JSON.stringify(data);
+
+                _this4._queue(function () {
+                    var coapCmd = 'coap-client -u \'' + _this4.session_key + '\' -k \'' + _this4.session_secret + '\' -m PUT -e \'' + jsonData + '\' coaps://' + _this4.host + ':5684/' + path;
+                    exec(coapCmd, execConfig, function (error) {
+                        if (error) {
+                            console.log(error);
+                            reject(error);
+                            return;
+                        }
+                        resolve();
+                    });
+                });
+            });
+        }
+    }, {
+        key: 'subscribe',
+        value: function subscribe(path, callback) {
+            var _this5 = this;
+
+            var resourceUrl = 'coaps://' + this.host + ':5684/' + path;
+
+            var process = spawn('coap-client', ['-u', this.username, '-k', this.key, '-m', 'get', '-s', '120', resourceUrl]);
+
+            process.stdout.on('data', function (stdout) {
+                var split = stdout.toString().trim().split("\n");
+                var json = split.pop();
+
+                try {
+                    var response = JSON.parse(json);
+                    callback(response);
+                } catch (e) {}
+            });
+            process.on('close', function (code) {
+                _this5.subscribe(path, callback);
+            });
+        }
+    }]);
+
+    return Coap;
 }();
 
 exports.default = Coap;
@@ -3477,7 +3533,7 @@ module.exports = exports['default'];
 
 
 Object.defineProperty(exports, "__esModule", {
-  value: true
+    value: true
 });
 
 var _createClass = function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; }();
@@ -3485,20 +3541,20 @@ var _createClass = function () { function defineProperties(target, props) { for 
 function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
 
 var Logger = function () {
-  function Logger() {
-    _classCallCheck(this, Logger);
-  }
-
-  _createClass(Logger, [{
-    key: 'info',
-    value: function info() {
-      var _console;
-
-      (_console = console).log.apply(_console, ['[Info]: '].concat(Array.prototype.slice.call(arguments)));
+    function Logger() {
+        _classCallCheck(this, Logger);
     }
-  }]);
 
-  return Logger;
+    _createClass(Logger, [{
+        key: 'info',
+        value: function info() {
+            var _console;
+
+            (_console = console).log.apply(_console, ['[Info]: '].concat(Array.prototype.slice.call(arguments)));
+        }
+    }]);
+
+    return Logger;
 }();
 
 exports.default = Logger;
@@ -3512,7 +3568,7 @@ module.exports = exports['default'];
 
 
 Object.defineProperty(exports, "__esModule", {
-  value: true
+    value: true
 });
 
 var _createClass = function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; }();
@@ -3528,307 +3584,312 @@ function _toConsumableArray(arr) { if (Array.isArray(arr)) { for (var i = 0, arr
 function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
 
 var transformData = function transformData(data) {
-  return {
-    id: data['9003'],
-    name: data['9001'],
-    manufacturer: data['3']['0'],
-    state: data['3311'][0]['5850'],
-    brightness: Math.round(data['3311'][0]['5851'] / 254 * 100),
-    colorX: data['3311'][0]['5709'],
-    colorY: data['3311'][0]['5710']
-  };
+    return {
+        id: data['9003'],
+        name: data['9001'],
+        manufacturer: data['3']['0'],
+        state: data['3311'][0]['5850'],
+        brightness: Math.round(data['3311'][0]['5851'] / 254 * 100),
+        colorX: data['3311'][0]['5709'],
+        colorY: data['3311'][0]['5710']
+    };
 };
 
 var xToHue = function xToHue(x) {
-  switch (x) {
-    case 29600:
-      // cold
-      return 0.616 * 360;
-    case 44200:
-      // warm
-      return 0.0833 * 360;
-    default:
-      // neutral
-      return 0.833 * 360;
-  }
+    switch (x) {
+        case 29600:
+            // cold
+            return 0.616 * 360;
+        case 44200:
+            // warm
+            return 0.0833 * 360;
+        default:
+            // neutral
+            return 0.833 * 360;
+    }
 };
 
 var yToSaturation = function yToSaturation(y) {
-  switch (y) {
-    case 30340:
-      // cold
-      return 0.2 * 100;
-    case 37770:
-      // warm
-      return 0.76 * 100;
-    default:
-      // neutral
-      return 0.02 * 100;
-  }
+    switch (y) {
+        case 30340:
+            // cold
+            return 0.2 * 100;
+        case 37770:
+            // warm
+            return 0.76 * 100;
+        default:
+            // neutral
+            return 0.02 * 100;
+    }
 };
 
 // Source: http://stackoverflow.com/a/9493060
 var hslToRgb = function hslToRgb(h, s, l) {
-  var r, g, b;
+    var r, g, b;
 
-  if (s == 0) {
-    r = g = b = l; // achromatic
-  } else {
-    var hue2rgb = function hue2rgb(p, q, t) {
-      if (t < 0) t += 1;
-      if (t > 1) t -= 1;
-      if (t < 1 / 6) return p + (q - p) * 6 * t;
-      if (t < 1 / 2) return q;
-      if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
-      return p;
-    };
+    if (s == 0) {
+        r = g = b = l; // achromatic
+    } else {
+        var hue2rgb = function hue2rgb(p, q, t) {
+            if (t < 0) t += 1;
+            if (t > 1) t -= 1;
+            if (t < 1 / 6) return p + (q - p) * 6 * t;
+            if (t < 1 / 2) return q;
+            if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+            return p;
+        };
 
-    var q = l < 0.5 ? l * (1 + s) : l + s - l * s;
-    var p = 2 * l - q;
-    r = hue2rgb(p, q, h + 1 / 3);
-    g = hue2rgb(p, q, h);
-    b = hue2rgb(p, q, h - 1 / 3);
-  }
+        var q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+        var p = 2 * l - q;
+        r = hue2rgb(p, q, h + 1 / 3);
+        g = hue2rgb(p, q, h);
+        b = hue2rgb(p, q, h - 1 / 3);
+    }
 
-  return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
+    return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
 };
 
 // Source http://stackoverflow.com/a/36061908
 var rgbToXy = function rgbToXy(red, green, blue) {
-  red = red > 0.04045 ? Math.pow((red + 0.055) / (1.0 + 0.055), 2.4) : red / 12.92;
-  green = green > 0.04045 ? Math.pow((green + 0.055) / (1.0 + 0.055), 2.4) : green / 12.92;
-  blue = blue > 0.04045 ? Math.pow((blue + 0.055) / (1.0 + 0.055), 2.4) : blue / 12.92;
-  var X = red * 0.664511 + green * 0.154324 + blue * 0.162028;
-  var Y = red * 0.283881 + green * 0.668433 + blue * 0.047685;
-  var Z = red * 0.000088 + green * 0.072310 + blue * 0.986039;
-  var fx = X / (X + Y + Z);
-  var fy = Y / (X + Y + Z);
-  return [fx.toPrecision(4), fy.toPrecision(4)];
+    red = red > 0.04045 ? Math.pow((red + 0.055) / (1.0 + 0.055), 2.4) : red / 12.92;
+    green = green > 0.04045 ? Math.pow((green + 0.055) / (1.0 + 0.055), 2.4) : green / 12.92;
+    blue = blue > 0.04045 ? Math.pow((blue + 0.055) / (1.0 + 0.055), 2.4) : blue / 12.92;
+    var X = red * 0.664511 + green * 0.154324 + blue * 0.162028;
+    var Y = red * 0.283881 + green * 0.668433 + blue * 0.047685;
+    var Z = red * 0.000088 + green * 0.072310 + blue * 0.986039;
+    var fx = X / (X + Y + Z);
+    var fy = Y / (X + Y + Z);
+    return [fx.toPrecision(4), fy.toPrecision(4)];
 };
 
 var newColor = {};
 
 var TradfriAccessory = function () {
-  function TradfriAccessory(accessory, platform, log) {
-    _classCallCheck(this, TradfriAccessory);
+    function TradfriAccessory(accessory, platform, log) {
+        _classCallCheck(this, TradfriAccessory);
 
-    this.platform = platform;
+        this.platform = platform;
 
-    this.device = transformData(accessory);
-    this.name = this.device.name + ' - ' + this.device.id;
+        this.device = transformData(accessory);
+        this.name = this.device.name + ' - ' + this.device.id;
 
-    this.loading = false;
-    this.dataCallbacks = [];
+        this.loading = false;
 
-    if (typeof log === 'undefined') {
-      this.log = new _Logger2.default();
-    } else {
-      this.log = log;
+        if (typeof log === 'undefined') {
+            this.log = new _Logger2.default();
+        } else {
+            this.log = log;
+        }
+
+        // this.subscribe();
     }
 
-    this.subscribe();
-  }
+    _createClass(TradfriAccessory, [{
+        key: 'identify',
+        value: function identify(callback) {
+            callback(this.device.name);
+        }
+    }, {
+        key: 'getServices',
+        value: function getServices() {
 
-  _createClass(TradfriAccessory, [{
-    key: 'identify',
-    value: function identify(callback) {
-      callback(this.device.name);
-    }
-  }, {
-    key: 'getServices',
-    value: function getServices() {
+            var Characteristic = this.platform.bridge.Characteristic;
+            var accessoryInfo = new this.platform.bridge.Service.AccessoryInformation();
 
-      var Characteristic = this.platform.bridge.Characteristic;
-      var accessoryInfo = new this.platform.bridge.Service.AccessoryInformation();
+            accessoryInfo.setCharacteristic(Characteristic.Name, this.device.name).setCharacteristic(Characteristic.Manufacturer, this.device.manufacturer).setCharacteristic(Characteristic.Model, "Tradfri");
 
-      accessoryInfo.setCharacteristic(Characteristic.Name, this.device.name).setCharacteristic(Characteristic.Manufacturer, this.device.manufacturer).setCharacteristic(Characteristic.Model, "Tradfri");
+            var lightbulbService = this.service = new this.platform.bridge.Service.Lightbulb(this.device.name);
 
-      var lightbulbService = this.service = new this.platform.bridge.Service.Lightbulb(this.device.name);
+            lightbulbService.getCharacteristic(Characteristic.On).on('get', this.getState.bind(this)).on('set', this.setState.bind(this));
 
-      lightbulbService.getCharacteristic(Characteristic.On).on('get', this.getState.bind(this)).on('set', this.setState.bind(this));
+            lightbulbService.getCharacteristic(Characteristic.Brightness).on('get', this.getBrightness.bind(this)).on('set', this.setBrightness.bind(this));
 
-      lightbulbService.getCharacteristic(Characteristic.Brightness).on('get', this.getBrightness.bind(this)).on('set', this.setBrightness.bind(this));
+            if (typeof this.device.colorX !== 'undefined') {
+                lightbulbService.getCharacteristic(Characteristic.Hue).on('get', this.getHue.bind(this)).on('set', this.setHue.bind(this));
 
-      if (typeof this.device.colorX !== 'undefined') {
-        lightbulbService.getCharacteristic(Characteristic.Hue).on('get', this.getHue.bind(this)).on('set', this.setHue.bind(this));
+                lightbulbService.getCharacteristic(Characteristic.Saturation).on('get', this.getSaturation.bind(this)).on('set', this.setSaturation.bind(this));
+            }
 
-        lightbulbService.getCharacteristic(Characteristic.Saturation).on('get', this.getSaturation.bind(this)).on('set', this.setSaturation.bind(this));
-      }
+            return [accessoryInfo, lightbulbService];
+        }
+    }, {
+        key: 'subscribe',
+        value: function subscribe() {
+            var _this = this;
 
-      return [accessoryInfo, lightbulbService];
-    }
-  }, {
-    key: 'subscribe',
-    value: function subscribe() {
-      var _this = this;
+            var coap = this.platform.coap;
+            coap.subscribe('15001/' + this.device.id, function (data) {
+                _this.handleChanges(transformData(data));
+            });
+        }
+    }, {
+        key: 'handleChanges',
+        value: function handleChanges(data) {
+            var Characteristic = this.platform.bridge.Characteristic;
+            if (data.state !== this.device.state) {
+                this.device.state = data.state;
+                this.service.updateCharacteristic(Characteristic.On, data.state === 1 ? true : false);
+            }
+            if (data.brightness !== this.device.brightness) {
+                this.device.brightness = data.brightness;
+                this.service.updateCharacteristic(Characteristic.Brightness, data.brightness);
+            }
+        }
+    }, {
+        key: 'getState',
+        value: function getState(callback) {
+            var _this2 = this;
 
-      var coap = this.platform.coap;
-      coap.subscribe('15001/' + this.device.id, function (data) {
-        _this.handleChanges(transformData(data));
-      });
-    }
-  }, {
-    key: 'handleChanges',
-    value: function handleChanges(data) {
-      var Characteristic = this.platform.bridge.Characteristic;
-      if (data.state !== this.device.state) {
-        this.device.state = data.state;
-        this.service.updateCharacteristic(Characteristic.On, data.state === 1 ? true : false);
-      }
-      if (data.brightness !== this.device.brightness) {
-        this.device.brightness = data.brightness;
-        this.service.updateCharacteristic(Characteristic.Brightness, data.brightness);
-      }
-    }
-  }, {
-    key: 'getState',
-    value: function getState(callback) {
-      callback(null, this.device.state);
-    }
-  }, {
-    key: 'setState',
-    value: function setState(state, callback) {
-      var _this2 = this;
+            var coap = this.platform.coap;
+            coap.get('15001/' + this.device.id).then(function (data) {
+                _this2.handleChanges(transformData(data));
+                callback(null, _this2.device.state);
+            });
+        }
+    }, {
+        key: 'setState',
+        value: function setState(state, callback) {
+            var _this3 = this;
 
-      var coap = this.platform.coap;
+            var coap = this.platform.coap;
 
-      // Sometimes (when using Siri) HomeKit sends boolean
-      // value as state, so we need to cast that to int
-      // See: https://github.com/szokeptr/homebridge-tradfri-plugin/issues/4#issue-222257475
-      if (typeof state !== 'number') {
-        state = state ? 1 : 0;
-      }
+            // Sometimes (when using Siri) HomeKit sends boolean
+            // value as state, so we need to cast that to int
+            // See: https://github.com/szokeptr/homebridge-tradfri-plugin/issues/4#issue-222257475
+            if (typeof state !== 'number') {
+                state = state ? 1 : 0;
+            }
 
-      // Check if state has actually changed
-      if (this.device.state === state) {
-        callback(null);
-        return;
-      }
-      this.device.state = state;
-      var data = {
-        "3311": [{
-          "5850": state
-        }]
-      };
-      coap.put('15001/' + this.device.id, data).then(function () {
-        callback(null);
-      }).catch(function (err) {
-        _this2.log.error('Error setting state');
-        callback(null);
-      });
-    }
-  }, {
-    key: 'getBrightness',
-    value: function getBrightness(callback) {
-      callback(null, this.device.brightness);
-    }
-  }, {
-    key: 'setBrightness',
-    value: function setBrightness(brightness, callback) {
-      var _this3 = this;
+            // Check if state has actually changed
+            if (this.device.state === state) {
+                callback(null);
+                return;
+            }
+            this.device.state = state;
+            var data = {
+                "3311": [{
+                    "5850": state
+                }]
+            };
+            coap.put('15001/' + this.device.id, data).then(function () {
+                callback(null);
+            }).catch(function (err) {
+                _this3.log.error('Error setting state');
+                callback(null);
+            });
+        }
+    }, {
+        key: 'getBrightness',
+        value: function getBrightness(callback) {
+            callback(null, this.device.brightness);
+        }
+    }, {
+        key: 'setBrightness',
+        value: function setBrightness(brightness, callback) {
+            var _this4 = this;
 
-      var coap = this.platform.coap;
+            var coap = this.platform.coap;
 
-      if (brightness > 0) {
-        this.device.state = 1;
-      }
-      if (this.device.brightness === brightness) {
-        callback(null);
-        return;
-      }
-      this.device.brightness = brightness;
-      var data = {
-        "3311": [{
-          "5851": Math.round(brightness * 2.54)
-        }]
-      };
-      coap.put('15001/' + this.device.id, data).then(function () {
-        callback(null);
-      }).catch(function (err) {
-        _this3.log.error('Error setting brightness');
-        callback(err);
-      });
-    }
-  }, {
-    key: 'getHue',
-    value: function getHue(callback) {
-      callback(null, xToHue(this.device.colorX));
-    }
-  }, {
-    key: 'setHue',
-    value: function setHue(hue, callback) {
-      var _this4 = this;
+            if (brightness > 0) {
+                this.device.state = 1;
+            }
+            if (this.device.brightness === brightness) {
+                callback(null);
+                return;
+            }
+            this.device.brightness = brightness;
+            var data = {
+                "3311": [{
+                    "5851": Math.round(brightness * 2.54)
+                }]
+            };
+            coap.put('15001/' + this.device.id, data).then(function () {
+                callback(null);
+            }).catch(function (err) {
+                _this4.log.error('Error setting brightness');
+                callback(null);
+            });
+        }
+    }, {
+        key: 'getHue',
+        value: function getHue(callback) {
+            callback(null, xToHue(this.device.colorX));
+        }
+    }, {
+        key: 'setHue',
+        value: function setHue(hue, callback) {
+            var _this5 = this;
 
-      newColor.h = hue / 360;
+            newColor.h = hue / 360;
 
-      if (typeof newColor.s !== 'undefined') {
-        this.updateColor(newColor.h, newColor.s).then(function () {
-          newColor = {};
-          callback(null);
-        }).catch(function (err) {
-          _this4.log.error('Error setting color, possibly out of range');
-          callback(err);
-        });
-      } else {
-        callback(null);
-      }
-    }
-  }, {
-    key: 'getSaturation',
-    value: function getSaturation(callback) {
-      callback(null, this.device.colorY);
-    }
-  }, {
-    key: 'setSaturation',
-    value: function setSaturation(saturation, callback) {
-      var _this5 = this;
+            if (typeof newColor.s !== 'undefined') {
+                this.updateColor(newColor.h, newColor.s).then(function () {
+                    newColor = {};
+                    callback(null);
+                }).catch(function (err) {
+                    _this5.log.error('Error setting color, possibly out of range');
+                    callback(null);
+                });
+            } else {
+                callback(null);
+            }
+        }
+    }, {
+        key: 'getSaturation',
+        value: function getSaturation(callback) {
+            callback(null, this.device.colorY);
+        }
+    }, {
+        key: 'setSaturation',
+        value: function setSaturation(saturation, callback) {
+            var _this6 = this;
 
-      newColor.s = saturation / 100;
+            newColor.s = saturation / 100;
 
-      if (typeof newColor.h !== 'undefined') {
-        this.updateColor(newColor.h, newColor.s).then(function () {
-          newColor = {};
-          callback(null);
-        }).catch(function (err) {
-          _this5.log.error('Error setting color, possibly out of range');
-          callback(err);
-        });
-      } else {
-        callback(null);
-      }
-    }
-  }, {
-    key: 'updateColor',
-    value: function updateColor(hue, saturation) {
-      var _this6 = this;
+            if (typeof newColor.h !== 'undefined') {
+                this.updateColor(newColor.h, newColor.s).then(function () {
+                    newColor = {};
+                    callback(null);
+                }).catch(function (err) {
+                    _this6.log.error('Error setting color, possibly out of range');
+                    callback(null);
+                });
+            } else {
+                callback(null);
+            }
+        }
+    }, {
+        key: 'updateColor',
+        value: function updateColor(hue, saturation) {
+            var _this7 = this;
 
-      var coap = this.platform.coap;
-      return new Promise(function (resolve, reject) {
-        // First we convert hue and saturation
-        // to RGB, with 75% lighntess
-        var rgb = hslToRgb(hue, saturation, 0.75);
-        // Then we convert the rgb values to
-        // CIE L*a*b XY values
-        var cie = rgbToXy.apply(undefined, _toConsumableArray(rgb)).map(function (item) {
-          // we need to scale the values
-          return Math.floor(100000 * item);
-        });
+            var coap = this.platform.coap;
+            return new Promise(function (resolve, reject) {
+                // First we convert hue and saturation
+                // to RGB, with 75% lighntess
+                var rgb = hslToRgb(hue, saturation, 0.75);
+                // Then we convert the rgb values to
+                // CIE L*a*b XY values
+                var cie = rgbToXy.apply(undefined, _toConsumableArray(rgb)).map(function (item) {
+                    // we need to scale the values
+                    return Math.floor(100000 * item);
+                });
 
-        _this6.device.colorX = cie[0];
-        _this6.device.colorY = cie[1];
+                _this7.device.colorX = cie[0];
+                _this7.device.colorY = cie[1];
 
-        var data = {
-          "3311": [{
-            "5709": cie[0],
-            "5710": cie[1]
-          }]
-        };
-        coap.put('15001/' + _this6.device.id, data).then(resolve).catch(reject);
-      });
-    }
-  }]);
+                var data = {
+                    "3311": [{
+                        "5709": cie[0],
+                        "5710": cie[1]
+                    }]
+                };
+                coap.put('15001/' + _this7.device.id, data).then(resolve).catch(reject);
+            });
+        }
+    }]);
 
-  return TradfriAccessory;
+    return TradfriAccessory;
 }();
 
 exports.default = TradfriAccessory;
@@ -3842,7 +3903,7 @@ module.exports = exports['default'];
 
 
 Object.defineProperty(exports, "__esModule", {
-  value: true
+    value: true
 });
 exports.TradfriPlatform = undefined;
 
@@ -3863,155 +3924,155 @@ function _asyncToGenerator(fn) { return function () { var gen = fn.apply(this, a
 function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
 
 var TradfriPlatform = exports.TradfriPlatform = function () {
-  function TradfriPlatform(log, config) {
-    _classCallCheck(this, TradfriPlatform);
+    function TradfriPlatform(log, config) {
+        _classCallCheck(this, TradfriPlatform);
 
-    this.log = log;
-    this.config = config;
+        this.log = log;
+        this.config = config;
 
-    this.coap = new _Coap2.default(config.host, 'Client_identity', config.key);
+        this.coap = new _Coap2.default(config.host, 'Client_identity', config.key);
 
-    this.bridge = {};
+        this.bridge = {};
 
-    this.bridge.Accessory = homebridge.platformAccessory;
-    this.bridge.Service = homebridge.hap.Service;
-    this.bridge.Characteristic = homebridge.hap.Characteristic;
-    // this.bridge.Characteristic = homebridge.hap.Characteristic;
-    this.bridge.uuid = homebridge.hap.uuid;
-  }
+        this.bridge.Accessory = homebridge.platformAccessory;
+        this.bridge.Service = homebridge.hap.Service;
+        this.bridge.Characteristic = homebridge.hap.Characteristic;
+        // this.bridge.Characteristic = homebridge.hap.Characteristic;
+        this.bridge.uuid = homebridge.hap.uuid;
+    }
 
-  _createClass(TradfriPlatform, [{
-    key: 'accessories',
-    value: function () {
-      var _ref = _asyncToGenerator(regeneratorRuntime.mark(function _callee(callback) {
-        var ids, accessories, _iteratorNormalCompletion, _didIteratorError, _iteratorError, _iterator, _step, deviceId, device;
+    _createClass(TradfriPlatform, [{
+        key: 'accessories',
+        value: function () {
+            var _ref = _asyncToGenerator(regeneratorRuntime.mark(function _callee(callback) {
+                var ids, accessories, _iteratorNormalCompletion, _didIteratorError, _iteratorError, _iterator, _step, deviceId, device;
 
-        return regeneratorRuntime.wrap(function _callee$(_context) {
-          while (1) {
-            switch (_context.prev = _context.next) {
-              case 0:
-                ids = [];
-                _context.prev = 1;
-                _context.next = 4;
-                return this.coap.get('15001');
+                return regeneratorRuntime.wrap(function _callee$(_context) {
+                    while (1) {
+                        switch (_context.prev = _context.next) {
+                            case 0:
+                                ids = [];
+                                _context.prev = 1;
+                                _context.next = 4;
+                                return this.coap.get('15001');
 
-              case 4:
-                ids = _context.sent;
-                _context.next = 12;
-                break;
+                            case 4:
+                                ids = _context.sent;
+                                _context.next = 12;
+                                break;
 
-              case 7:
-                _context.prev = 7;
-                _context.t0 = _context['catch'](1);
+                            case 7:
+                                _context.prev = 7;
+                                _context.t0 = _context['catch'](1);
 
 
-                if (_context.t0.signal === 'SIGTERM') {
-                  this.log.error('Command timed out: ' + _context.t0.cmd);
-                } else {
-                  this.log.error("Cannot get devices from gateway! Is the Host and Key correct in config.json?");
-                }
-                callback([]);
-                return _context.abrupt('return');
+                                if (_context.t0.signal === 'SIGTERM') {
+                                    this.log.error('Command timed out: ' + _context.t0.cmd);
+                                } else {
+                                    this.log.error("Cannot get devices from gateway! Is the Host and Key correct in config.json?");
+                                }
+                                callback([]);
+                                return _context.abrupt('return');
 
-              case 12:
-                accessories = [];
-                _iteratorNormalCompletion = true;
-                _didIteratorError = false;
-                _iteratorError = undefined;
-                _context.prev = 16;
-                _iterator = ids[Symbol.iterator]();
+                            case 12:
+                                accessories = [];
+                                _iteratorNormalCompletion = true;
+                                _didIteratorError = false;
+                                _iteratorError = undefined;
+                                _context.prev = 16;
+                                _iterator = ids[Symbol.iterator]();
 
-              case 18:
-                if (_iteratorNormalCompletion = (_step = _iterator.next()).done) {
-                  _context.next = 33;
-                  break;
-                }
+                            case 18:
+                                if (_iteratorNormalCompletion = (_step = _iterator.next()).done) {
+                                    _context.next = 33;
+                                    break;
+                                }
 
-                deviceId = _step.value;
-                _context.prev = 20;
-                _context.next = 23;
-                return this.coap.get('15001/' + deviceId);
+                                deviceId = _step.value;
+                                _context.prev = 20;
+                                _context.next = 23;
+                                return this.coap.get('15001/' + deviceId);
 
-              case 23:
-                device = _context.sent;
+                            case 23:
+                                device = _context.sent;
 
-                if (typeof device['3311'] !== 'undefined') {
-                  // Remotes are not supported
-                  accessories.push(new _device2.default(device, this, this.log));
-                }
-                _context.next = 30;
-                break;
+                                if (typeof device['3311'] !== 'undefined') {
+                                    // Remotes are not supported
+                                    accessories.push(new _device2.default(device, this, this.log));
+                                }
+                                _context.next = 30;
+                                break;
 
-              case 27:
-                _context.prev = 27;
-                _context.t1 = _context['catch'](20);
+                            case 27:
+                                _context.prev = 27;
+                                _context.t1 = _context['catch'](20);
 
-                if (_context.t1.signal === 'SIGTERM') {
-                  this.log.error('Command timed out: ' + _context.t1.cmd);
-                } else {
-                  this.log.error('Failed to get device id: ' + deviceId);
-                }
+                                if (_context.t1.signal === 'SIGTERM') {
+                                    this.log.error('Command timed out: ' + _context.t1.cmd);
+                                } else {
+                                    this.log.error('Failed to get device id: ' + deviceId);
+                                }
 
-              case 30:
-                _iteratorNormalCompletion = true;
-                _context.next = 18;
-                break;
+                            case 30:
+                                _iteratorNormalCompletion = true;
+                                _context.next = 18;
+                                break;
 
-              case 33:
-                _context.next = 39;
-                break;
+                            case 33:
+                                _context.next = 39;
+                                break;
 
-              case 35:
-                _context.prev = 35;
-                _context.t2 = _context['catch'](16);
-                _didIteratorError = true;
-                _iteratorError = _context.t2;
+                            case 35:
+                                _context.prev = 35;
+                                _context.t2 = _context['catch'](16);
+                                _didIteratorError = true;
+                                _iteratorError = _context.t2;
 
-              case 39:
-                _context.prev = 39;
-                _context.prev = 40;
+                            case 39:
+                                _context.prev = 39;
+                                _context.prev = 40;
 
-                if (!_iteratorNormalCompletion && _iterator.return) {
-                  _iterator.return();
-                }
+                                if (!_iteratorNormalCompletion && _iterator.return) {
+                                    _iterator.return();
+                                }
 
-              case 42:
-                _context.prev = 42;
+                            case 42:
+                                _context.prev = 42;
 
-                if (!_didIteratorError) {
-                  _context.next = 45;
-                  break;
-                }
+                                if (!_didIteratorError) {
+                                    _context.next = 45;
+                                    break;
+                                }
 
-                throw _iteratorError;
+                                throw _iteratorError;
 
-              case 45:
-                return _context.finish(42);
+                            case 45:
+                                return _context.finish(42);
 
-              case 46:
-                return _context.finish(39);
+                            case 46:
+                                return _context.finish(39);
 
-              case 47:
+                            case 47:
 
-                callback(accessories);
+                                callback(accessories);
 
-              case 48:
-              case 'end':
-                return _context.stop();
+                            case 48:
+                            case 'end':
+                                return _context.stop();
+                        }
+                    }
+                }, _callee, this, [[1, 7], [16, 35, 39, 47], [20, 27], [40,, 42, 46]]);
+            }));
+
+            function accessories(_x) {
+                return _ref.apply(this, arguments);
             }
-          }
-        }, _callee, this, [[1, 7], [16, 35, 39, 47], [20, 27], [40,, 42, 46]]);
-      }));
 
-      function accessories(_x) {
-        return _ref.apply(this, arguments);
-      }
+            return accessories;
+        }()
+    }]);
 
-      return accessories;
-    }()
-  }]);
-
-  return TradfriPlatform;
+    return TradfriPlatform;
 }();
 
 /***/ }),
