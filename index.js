@@ -3529,9 +3529,9 @@ var Coap = function () {
             var _this6 = this;
 
             var resourceUrl = 'coaps://' + this.host + ':5684/' + path;
-            var processTimeout = Math.floor(Math.random() * 30 + 30) + '';
+            var processTimeout = Math.floor(Math.random() * 30 + 30);
 
-            var process = spawn('coap-client', ['-u', this.session_key, '-k', this.session_secret, '-m', 'get', '-s', processTimeout, '-B', processTimeout, resourceUrl]);
+            var process = spawn('coap-client', ['-u', this.session_key, '-k', this.session_secret, '-m', 'get', '-s', processTimeout + '', '-B', processTimeout + '', resourceUrl]);
 
             process.stdout.on('data', function (stdout) {
                 var split = stdout.toString().trim().split("\n");
@@ -3544,7 +3544,12 @@ var Coap = function () {
                     // console.error('Failed to decode JSON: ', e);
                 }
             });
+            var killer = setTimeout(function () {
+                process.kill();
+                console.log('killing process');
+            }, processTimeout * 1000);
             process.on('close', function () {
+                clearTimeout(killer);
                 _this6.subscribe(path, callback);
             });
         }
