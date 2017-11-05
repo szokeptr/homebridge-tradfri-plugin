@@ -3394,6 +3394,38 @@ var Coap = function () {
         this._runLoop();
 
         this._authenticate();
+
+        this.putQueue = {
+            items: {},
+            callbacks: {},
+            add: function add(path, data) {
+                var _this = this;
+
+                return new Promise(function (resolve, reject) {
+                    if (typeof _this.items[path] !== 'undefined' && _this.items[path] !== null) {
+                        _this.items[path]["3311"][0] = Object.assign(_this.items[path]["3311"][0], data["3311"][0]);
+                        _this.callbacks[path].push(resolve);
+                    } else {
+                        _this.items[path] = data;
+                        _this.callbacks[path] = [resolve];
+                        setTimeout(function () {
+                            var data = Object.assign({}, _this.items[path]);
+                            _this.items[path] = null;
+
+                            var i = 0;
+                            var d = data;
+                            while (_this.callbacks[path].length) {
+                                if (i > 0) {
+                                    d = null;
+                                }
+                                _this.callbacks[path].shift()(d);
+                                i++;
+                            }
+                        }, 50);
+                    }
+                });
+            }
+        };
     }
 
     _createClass(Coap, [{
@@ -3404,13 +3436,11 @@ var Coap = function () {
     }, {
         key: '_runLoop',
         value: function _runLoop() {
-            var _this = this;
+            var _this2 = this;
 
             setInterval(function () {
-
-                if (_this.queue.length > 0 && _this.session_secret !== null) {
-                    //console.log('running fn');
-                    var fn = _this.queue.shift();
+                if (_this2.queue.length > 0 && _this2.session_secret !== null) {
+                    var fn = _this2.queue.shift();
                     fn();
                 }
             }, 20);
@@ -3418,22 +3448,21 @@ var Coap = function () {
     }, {
         key: '_authenticate',
         value: function _authenticate() {
-            var _this2 = this;
+            var _this3 = this;
 
             return new Promise(function (resolve, reject) {
-                var coapCmd = 'coap-client -m post -u "' + _this2.username + '" -k "' + _this2.key + '" -e \'{"9090":"' + _this2.session_key + '"}\' "coaps://' + _this2.host + ':5684/15011/9063"';
-
+                var coapCmd = 'coap-client -m post -u "' + _this3.username + '" -k "' + _this3.key + '" -e \'{"9090":"' + _this3.session_key + '"}\' "coaps://' + _this3.host + ':5684/15011/9063"';
                 exec(coapCmd, execConfig, function (error, stdout, stderr) {
                     if (error) {
                         reject(error);
                         return;
                     }
-
                     var split = stdout.trim().split("\n");
                     var json = split.pop();
                     try {
                         var response = JSON.parse(json);
-                        _this2.session_secret = response["9091"];
+                        console.log(response);
+                        _this3.session_secret = response["9091"];
 
                         resolve(response);
                     } catch (e) {
@@ -3445,21 +3474,17 @@ var Coap = function () {
     }, {
         key: 'get',
         value: function get(path) {
-            var _this3 = this;
+            var _this4 = this;
 
             return new Promise(function (resolve, reject) {
-
-                _this3._queue(function () {
-                    var coapCmd = 'coap-client -u \'' + _this3.session_key + '\' -k \'' + _this3.session_secret + '\' -B 5 coaps://' + _this3.host + ':5684/' + path;
-
+                _this4._queue(function () {
+                    var coapCmd = 'coap-client -u \'' + _this4.session_key + '\' -k \'' + _this4.session_secret + '\' -B 5 coaps://' + _this4.host + ':5684/' + path;
                     exec(coapCmd, execConfig, function (error, stdout, stderr) {
-
                         if (error) {
                             console.error(stderr);
                             reject(error);
                             return;
                         }
-
                         var split = stdout.trim().split("\n");
                         var json = split.pop();
 
@@ -3476,33 +3501,37 @@ var Coap = function () {
     }, {
         key: 'put',
         value: function put(path, data) {
-            var _this4 = this;
+            var _this5 = this;
 
             return new Promise(function (resolve, reject) {
-
-                var jsonData = JSON.stringify(data);
-
-                _this4._queue(function () {
-                    var coapCmd = 'coap-client -u \'' + _this4.session_key + '\' -k \'' + _this4.session_secret + '\' -m PUT -e \'' + jsonData + '\' coaps://' + _this4.host + ':5684/' + path;
-                    exec(coapCmd, execConfig, function (error) {
-                        if (error) {
-                            console.log(error);
-                            reject(error);
-                            return;
-                        }
+                _this5.putQueue.add(path, data).then(function (data) {
+                    if (data === null) {
                         resolve();
+                        return;
+                    }
+                    var jsonData = JSON.stringify(data);
+                    _this5._queue(function () {
+                        var coapCmd = 'coap-client -u \'' + _this5.session_key + '\' -k \'' + _this5.session_secret + '\' -m PUT -e \'' + jsonData + '\' coaps://' + _this5.host + ':5684/' + path;
+                        exec(coapCmd, execConfig, function (error) {
+                            if (error) {
+                                reject(error);
+                                return;
+                            }
+                            resolve();
+                        });
                     });
-                });
+                }).catch(reject);
             });
         }
     }, {
         key: 'subscribe',
         value: function subscribe(path, callback) {
-            var _this5 = this;
+            var _this6 = this;
 
             var resourceUrl = 'coaps://' + this.host + ':5684/' + path;
+            var processTimeout = Math.floor(Math.random() * 30 + 30) + '';
 
-            var process = spawn('coap-client', ['-u', this.username, '-k', this.key, '-m', 'get', '-s', '120', resourceUrl]);
+            var process = spawn('coap-client', ['-u', this.session_key, '-k', this.session_secret, '-m', 'get', '-s', processTimeout, '-B', processTimeout, resourceUrl]);
 
             process.stdout.on('data', function (stdout) {
                 var split = stdout.toString().trim().split("\n");
@@ -3511,10 +3540,12 @@ var Coap = function () {
                 try {
                     var response = JSON.parse(json);
                     callback(response);
-                } catch (e) {}
+                } catch (e) {
+                    // console.error('Failed to decode JSON: ', e);
+                }
             });
-            process.on('close', function (code) {
-                _this5.subscribe(path, callback);
+            process.on('close', function () {
+                _this6.subscribe(path, callback);
             });
         }
     }]);
@@ -3673,15 +3704,13 @@ var TradfriAccessory = function () {
         this.device = transformData(accessory);
         this.name = this.device.name + ' - ' + this.device.id;
 
-        this.loading = false;
-
         if (typeof log === 'undefined') {
             this.log = new _Logger2.default();
         } else {
             this.log = log;
         }
 
-        // this.subscribe();
+        this.subscribe();
     }
 
     _createClass(TradfriAccessory, [{
@@ -3738,19 +3767,11 @@ var TradfriAccessory = function () {
     }, {
         key: 'getState',
         value: function getState(callback) {
-            var _this2 = this;
-
-            var coap = this.platform.coap;
-            coap.get('15001/' + this.device.id).then(function (data) {
-                _this2.handleChanges(transformData(data));
-                callback(null, _this2.device.state);
-            });
+            callback(null, this.device.state);
         }
     }, {
         key: 'setState',
         value: function setState(state, callback) {
-            var _this3 = this;
-
             var coap = this.platform.coap;
 
             // Sometimes (when using Siri) HomeKit sends boolean
@@ -3758,12 +3779,6 @@ var TradfriAccessory = function () {
             // See: https://github.com/szokeptr/homebridge-tradfri-plugin/issues/4#issue-222257475
             if (typeof state !== 'number') {
                 state = state ? 1 : 0;
-            }
-
-            // Check if state has actually changed
-            if (this.device.state === state) {
-                callback(null);
-                return;
             }
             this.device.state = state;
             var data = {
@@ -3774,7 +3789,6 @@ var TradfriAccessory = function () {
             coap.put('15001/' + this.device.id, data).then(function () {
                 callback(null);
             }).catch(function (err) {
-                _this3.log.error('Error setting state');
                 callback(null);
             });
         }
@@ -3786,17 +3800,12 @@ var TradfriAccessory = function () {
     }, {
         key: 'setBrightness',
         value: function setBrightness(brightness, callback) {
-            var _this4 = this;
-
             var coap = this.platform.coap;
 
             if (brightness > 0) {
                 this.device.state = 1;
             }
-            if (this.device.brightness === brightness) {
-                callback(null);
-                return;
-            }
+
             this.device.brightness = brightness;
             var data = {
                 "3311": [{
@@ -3806,7 +3815,6 @@ var TradfriAccessory = function () {
             coap.put('15001/' + this.device.id, data).then(function () {
                 callback(null);
             }).catch(function (err) {
-                _this4.log.error('Error setting brightness');
                 callback(null);
             });
         }
@@ -3818,8 +3826,6 @@ var TradfriAccessory = function () {
     }, {
         key: 'setHue',
         value: function setHue(hue, callback) {
-            var _this5 = this;
-
             newColor.h = hue / 360;
 
             if (typeof newColor.s !== 'undefined') {
@@ -3827,7 +3833,6 @@ var TradfriAccessory = function () {
                     newColor = {};
                     callback(null);
                 }).catch(function (err) {
-                    _this5.log.error('Error setting color, possibly out of range');
                     callback(null);
                 });
             } else {
@@ -3837,13 +3842,15 @@ var TradfriAccessory = function () {
     }, {
         key: 'getSaturation',
         value: function getSaturation(callback) {
-            callback(null, this.device.colorY);
+            var _this2 = this;
+
+            this.getState(function () {
+                callback(null, _this2.device.colorY);
+            });
         }
     }, {
         key: 'setSaturation',
         value: function setSaturation(saturation, callback) {
-            var _this6 = this;
-
             newColor.s = saturation / 100;
 
             if (typeof newColor.h !== 'undefined') {
@@ -3851,7 +3858,6 @@ var TradfriAccessory = function () {
                     newColor = {};
                     callback(null);
                 }).catch(function (err) {
-                    _this6.log.error('Error setting color, possibly out of range');
                     callback(null);
                 });
             } else {
@@ -3861,7 +3867,7 @@ var TradfriAccessory = function () {
     }, {
         key: 'updateColor',
         value: function updateColor(hue, saturation) {
-            var _this7 = this;
+            var _this3 = this;
 
             var coap = this.platform.coap;
             return new Promise(function (resolve, reject) {
@@ -3875,8 +3881,8 @@ var TradfriAccessory = function () {
                     return Math.floor(100000 * item);
                 });
 
-                _this7.device.colorX = cie[0];
-                _this7.device.colorY = cie[1];
+                _this3.device.colorX = cie[0];
+                _this3.device.colorY = cie[1];
 
                 var data = {
                     "3311": [{
@@ -3884,7 +3890,9 @@ var TradfriAccessory = function () {
                         "5710": cie[1]
                     }]
                 };
-                coap.put('15001/' + _this7.device.id, data).then(resolve).catch(reject);
+                coap.put('15001/' + _this3.device.id, data).then(function () {
+                    resolve();
+                }).catch(reject);
             });
         }
     }]);

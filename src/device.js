@@ -88,15 +88,13 @@ export default class TradfriAccessory {
         this.device = transformData(accessory);
         this.name = `${ this.device.name } - ${ this.device.id }`;
 
-        this.loading = false;
-
         if (typeof log === 'undefined') {
             this.log = new Logger;
         } else {
             this.log = log;
         }
 
-        // this.subscribe();
+        this.subscribe();
     }
 
     identify(callback) {
@@ -160,12 +158,7 @@ export default class TradfriAccessory {
     }
 
     getState(callback) {
-        const coap = this.platform.coap;
-        coap.get(`15001/${ this.device.id }`).then(data => {
-            this.handleChanges(transformData(data));
-            callback(null, this.device.state);
-        });
-
+        callback(null, this.device.state);
     }
 
     setState(state, callback) {
@@ -177,12 +170,6 @@ export default class TradfriAccessory {
         if (typeof state !== 'number') {
             state = state ? 1 : 0;
         }
-
-        // Check if state has actually changed
-        if (this.device.state === state) {
-            callback(null);
-            return;
-        }
         this.device.state = state;
         const data = {
             "3311": [{
@@ -192,9 +179,9 @@ export default class TradfriAccessory {
         coap.put(`15001/${ this.device.id }`, data).then(() => {
             callback(null);
         }).catch(err => {
-            this.log.error('Error setting state');
             callback(null);
         });
+
     }
 
     getBrightness(callback) {
@@ -207,10 +194,7 @@ export default class TradfriAccessory {
         if (brightness > 0) {
             this.device.state = 1;
         }
-        if (this.device.brightness === brightness) {
-            callback(null);
-            return;
-        }
+
         this.device.brightness = brightness;
         const data = {
             "3311": [{
@@ -220,7 +204,6 @@ export default class TradfriAccessory {
         coap.put(`15001/${ this.device.id }`, data).then(() => {
             callback(null);
         }).catch(err => {
-            this.log.error('Error setting brightness');
             callback(null);
         });
     }
@@ -237,7 +220,6 @@ export default class TradfriAccessory {
                 newColor = {};
                 callback(null);
             }).catch(err => {
-                this.log.error('Error setting color, possibly out of range');
                 callback(null);
             });
         } else {
@@ -247,7 +229,9 @@ export default class TradfriAccessory {
     }
 
     getSaturation(callback) {
-        callback(null, this.device.colorY);
+        this.getState(() => {
+            callback(null, this.device.colorY);
+        });
     }
 
     setSaturation(saturation, callback) {
@@ -258,7 +242,6 @@ export default class TradfriAccessory {
                 newColor = {};
                 callback(null);
             }).catch(err => {
-                this.log.error('Error setting color, possibly out of range');
                 callback(null);
             });
         } else {
@@ -288,8 +271,9 @@ export default class TradfriAccessory {
                     "5710": cie[1]
                 }]
             };
-            coap.put(`15001/${ this.device.id }`, data).then(resolve).catch(reject);
+            coap.put(`15001/${ this.device.id }`, data).then(() => {
+                resolve();
+            }).catch(reject);
         });
     }
-
 }
