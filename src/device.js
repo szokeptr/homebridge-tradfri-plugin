@@ -100,7 +100,7 @@ export default class TradfriAccessory {
     identify(callback) {
         callback(this.device.name);
     }
-
+ 
     getServices() {
 
         const Characteristic = this.platform.bridge.Characteristic;
