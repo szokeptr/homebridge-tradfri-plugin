@@ -90,8 +90,9 @@ export class TradfriPlatform {
 
     async updateStatus() {
 
-        if (!this.coap) {
+        if (!this.coap || !this.coap.authenticated) {
             try {
+                this.log("Setting up coap communication")
                 this.coap = new Coap(this.config.host, 'Client_identity', this.config.key);
             } catch (e) {
                 this.log.error("Could not communicate with tradfri", e)

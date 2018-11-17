@@ -3780,6 +3780,8 @@ var execConfig = {
 
 var Coap = function () {
     function Coap(host, username, key) {
+        var _this = this;
+
         _classCallCheck(this, Coap);
 
         (0, _commandExists2.default)('coap-client').catch(function () {
@@ -3799,32 +3801,37 @@ var Coap = function () {
 
         this._runLoop();
 
-        this._authenticate();
+        this._authenticate().then(function () {
+            _this.authenticated = true;
+        }).catch(function (e) {
+            _this.authenticated = false;
+            return;
+        });
 
         this.putQueue = {
             items: {},
             callbacks: {},
             add: function add(path, data) {
-                var _this = this;
+                var _this2 = this;
 
                 return new Promise(function (resolve, reject) {
-                    if (typeof _this.items[path] !== 'undefined' && _this.items[path] !== null) {
-                        _this.items[path]["3311"][0] = Object.assign(_this.items[path]["3311"][0], data["3311"][0]);
-                        _this.callbacks[path].push(resolve);
+                    if (typeof _this2.items[path] !== 'undefined' && _this2.items[path] !== null) {
+                        _this2.items[path]["3311"][0] = Object.assign(_this2.items[path]["3311"][0], data["3311"][0]);
+                        _this2.callbacks[path].push(resolve);
                     } else {
-                        _this.items[path] = data;
-                        _this.callbacks[path] = [resolve];
+                        _this2.items[path] = data;
+                        _this2.callbacks[path] = [resolve];
                         setTimeout(function () {
-                            var data = Object.assign({}, _this.items[path]);
-                            _this.items[path] = null;
+                            var data = Object.assign({}, _this2.items[path]);
+                            _this2.items[path] = null;
 
                             var i = 0;
                             var d = data;
-                            while (_this.callbacks[path].length) {
+                            while (_this2.callbacks[path].length) {
                                 if (i > 0) {
                                     d = null;
                                 }
-                                _this.callbacks[path].shift()(d);
+                                _this2.callbacks[path].shift()(d);
                                 i++;
                             }
                         }, 50);
@@ -3842,11 +3849,11 @@ var Coap = function () {
     }, {
         key: '_runLoop',
         value: function _runLoop() {
-            var _this2 = this;
+            var _this3 = this;
 
             setInterval(function () {
-                if (_this2.queue.length > 0 && _this2.session_secret !== null) {
-                    var fn = _this2.queue.shift();
+                if (_this3.queue.length > 0 && _this3.session_secret !== null) {
+                    var fn = _this3.queue.shift();
                     fn();
                 }
             }, 20);
@@ -3854,10 +3861,10 @@ var Coap = function () {
     }, {
         key: '_authenticate',
         value: function _authenticate() {
-            var _this3 = this;
+            var _this4 = this;
 
             return new Promise(function (resolve, reject) {
-                var coapCmd = 'coap-client -m post -u "' + _this3.username + '" -k "' + _this3.key + '" -e \'{"9090":"' + _this3.session_key + '"}\' "coaps://' + _this3.host + ':5684/15011/9063"';
+                var coapCmd = 'coap-client -m post -u "' + _this4.username + '" -k "' + _this4.key + '" -e \'{"9090":"' + _this4.session_key + '"}\' "coaps://' + _this4.host + ':5684/15011/9063"';
                 exec(coapCmd, execConfig, function (error, stdout, stderr) {
                     if (error) {
                         reject(error);
@@ -3868,7 +3875,7 @@ var Coap = function () {
                     try {
                         var response = JSON.parse(json);
                         console.log(response);
-                        _this3.session_secret = response["9091"];
+                        _this4.session_secret = response["9091"];
 
                         resolve(response);
                     } catch (e) {
@@ -3880,11 +3887,11 @@ var Coap = function () {
     }, {
         key: 'get',
         value: function get(path) {
-            var _this4 = this;
+            var _this5 = this;
 
             return new Promise(function (resolve, reject) {
-                _this4._queue(function () {
-                    var coapCmd = 'coap-client -u \'' + _this4.session_key + '\' -k \'' + _this4.session_secret + '\' -B 5 coaps://' + _this4.host + ':5684/' + path;
+                _this5._queue(function () {
+                    var coapCmd = 'coap-client -u \'' + _this5.session_key + '\' -k \'' + _this5.session_secret + '\' -B 5 coaps://' + _this5.host + ':5684/' + path;
                     exec(coapCmd, execConfig, function (error, stdout, stderr) {
                         if (error) {
                             console.error(stderr);
@@ -3907,17 +3914,17 @@ var Coap = function () {
     }, {
         key: 'put',
         value: function put(path, data) {
-            var _this5 = this;
+            var _this6 = this;
 
             return new Promise(function (resolve, reject) {
-                _this5.putQueue.add(path, data).then(function (data) {
+                _this6.putQueue.add(path, data).then(function (data) {
                     if (data === null) {
                         resolve();
                         return;
                     }
                     var jsonData = JSON.stringify(data);
-                    _this5._queue(function () {
-                        var coapCmd = 'coap-client -u \'' + _this5.session_key + '\' -k \'' + _this5.session_secret + '\' -m PUT -e \'' + jsonData + '\' coaps://' + _this5.host + ':5684/' + path;
+                    _this6._queue(function () {
+                        var coapCmd = 'coap-client -u \'' + _this6.session_key + '\' -k \'' + _this6.session_secret + '\' -m PUT -e \'' + jsonData + '\' coaps://' + _this6.host + ':5684/' + path;
                         exec(coapCmd, execConfig, function (error) {
                             if (error) {
                                 reject(error);
@@ -3932,7 +3939,7 @@ var Coap = function () {
     }, {
         key: 'subscribe',
         value: function subscribe(path, callback) {
-            var _this6 = this;
+            var _this7 = this;
 
             var resourceUrl = 'coaps://' + this.host + ':5684/' + path;
             var processTimeout = Math.floor(Math.random() * 30 + 30);
@@ -3955,7 +3962,7 @@ var Coap = function () {
             }, processTimeout * 1000);
             process.on('close', function () {
                 clearTimeout(killer);
-                _this6.subscribe(path, callback);
+                _this7.subscribe(path, callback);
             });
         }
     }]);
@@ -4490,38 +4497,39 @@ var TradfriPlatform = exports.TradfriPlatform = function () {
                     while (1) {
                         switch (_context5.prev = _context5.next) {
                             case 0:
-                                if (this.coap) {
-                                    _context5.next = 9;
+                                if (!(!this.coap || !this.coap.authenticated)) {
+                                    _context5.next = 10;
                                     break;
                                 }
 
                                 _context5.prev = 1;
 
+                                this.log("Setting up coap communication");
                                 this.coap = new _Coap2.default(this.config.host, 'Client_identity', this.config.key);
-                                _context5.next = 9;
+                                _context5.next = 10;
                                 break;
 
-                            case 5:
-                                _context5.prev = 5;
+                            case 6:
+                                _context5.prev = 6;
                                 _context5.t0 = _context5['catch'](1);
 
                                 this.log.error("Could not communicate with tradfri", _context5.t0);
                                 return _context5.abrupt('return');
 
-                            case 9:
+                            case 10:
                                 ids = [];
-                                _context5.prev = 10;
-                                _context5.next = 13;
+                                _context5.prev = 11;
+                                _context5.next = 14;
                                 return this.coap.get('15001');
 
-                            case 13:
+                            case 14:
                                 ids = _context5.sent;
-                                _context5.next = 22;
+                                _context5.next = 23;
                                 break;
 
-                            case 16:
-                                _context5.prev = 16;
-                                _context5.t1 = _context5['catch'](10);
+                            case 17:
+                                _context5.prev = 17;
+                                _context5.t1 = _context5['catch'](11);
 
 
                                 if (_context5.t1.signal === 'SIGTERM') {
@@ -4559,7 +4567,7 @@ var TradfriPlatform = exports.TradfriPlatform = function () {
 
                                 return _context5.abrupt('return');
 
-                            case 22:
+                            case 23:
                                 knownAccessories = this.accessories.slice();
                                 newIds = [];
 
@@ -4688,69 +4696,69 @@ var TradfriPlatform = exports.TradfriPlatform = function () {
                                 _iteratorNormalCompletion = true;
                                 _didIteratorError = false;
                                 _iteratorError = undefined;
-                                _context5.prev = 29;
+                                _context5.prev = 30;
                                 _iterator = ids[Symbol.iterator]();
 
-                            case 31:
+                            case 32:
                                 if (_iteratorNormalCompletion = (_step = _iterator.next()).done) {
-                                    _context5.next = 37;
+                                    _context5.next = 38;
                                     break;
                                 }
 
                                 deviceId = _step.value;
-                                return _context5.delegateYield(_loop(deviceId), 't2', 34);
+                                return _context5.delegateYield(_loop(deviceId), 't2', 35);
 
-                            case 34:
+                            case 35:
                                 _iteratorNormalCompletion = true;
-                                _context5.next = 31;
+                                _context5.next = 32;
                                 break;
 
-                            case 37:
-                                _context5.next = 43;
+                            case 38:
+                                _context5.next = 44;
                                 break;
 
-                            case 39:
-                                _context5.prev = 39;
-                                _context5.t3 = _context5['catch'](29);
+                            case 40:
+                                _context5.prev = 40;
+                                _context5.t3 = _context5['catch'](30);
                                 _didIteratorError = true;
                                 _iteratorError = _context5.t3;
 
-                            case 43:
-                                _context5.prev = 43;
+                            case 44:
                                 _context5.prev = 44;
+                                _context5.prev = 45;
 
                                 if (!_iteratorNormalCompletion && _iterator.return) {
                                     _iterator.return();
                                 }
 
-                            case 46:
-                                _context5.prev = 46;
+                            case 47:
+                                _context5.prev = 47;
 
                                 if (!_didIteratorError) {
-                                    _context5.next = 49;
+                                    _context5.next = 50;
                                     break;
                                 }
 
                                 throw _iteratorError;
 
-                            case 49:
-                                return _context5.finish(46);
-
                             case 50:
-                                return _context5.finish(43);
+                                return _context5.finish(47);
 
                             case 51:
+                                return _context5.finish(44);
+
+                            case 52:
 
                                 knownAccessories.forEach(function (accessory) {
                                     _this2.removeAccessory(accessory);
                                 });
 
-                            case 52:
+                            case 53:
                             case 'end':
                                 return _context5.stop();
                         }
                     }
-                }, _callee4, this, [[1, 5], [10, 16], [29, 39, 43, 51], [44,, 46, 50]]);
+                }, _callee4, this, [[1, 6], [11, 17], [30, 40, 44, 52], [45,, 47, 51]]);
             }));
 
             function updateStatus() {
