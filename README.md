@@ -10,6 +10,7 @@ Supported features:
 - adjust brightness
 - adjust color temperature (far from perfect, better solutions than estimating the temperature from hue/saturation are welcome!)
 - NEW: color temperature can be adjusted gradually, not just the 3 predefined values.
+- NEW: support for outlets
 
 ![Brightness and Color](http://oo00oo.pw/media/tradfri-screenshots.png)
 
@@ -47,7 +48,8 @@ You just need to add the platform to your `config.json` as shown below:
   "platform": "IkeaTradfri",
   "name": "Tradfri",
   "host": "192.168.x.x",
-  "key": "PSK"
+  "key": "PSK",
+  "ignoreBulbs": false // set to true to hide bulbs
 }
 ],
 ```
@@ -56,11 +58,10 @@ Of course, you will need to add the IP address of the Ikea gateway and the key, 
 
 # Contributing
 
-The source can be found in the `src/` folder. The project is using webpack to transpile and bundle the source files. The configuration should work out of the box, you just need to run `webpack` to get it bundled. Don't forget to install the devDependencies too!
+The source can be found in the `src/` folder. The project is using rollup to bundle the source files. You just need to run `npm run build` to get it bundled. Don't forget to install the devDependencies too!
 
 # Todo
 
-- replace webpack for better development flow
 - improve color temperature conversion
 - tests
 

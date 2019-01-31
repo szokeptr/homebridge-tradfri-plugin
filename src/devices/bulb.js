@@ -1,4 +1,4 @@
-import Logger from '../lib/Logger.js';
+import Logger from '../../lib/Logger.js';
 
 const transformData = data => {
     return {

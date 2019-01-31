@@ -1,5 +1,6 @@
 import Coap from '../lib/Coap';
-import TradfriDevice from './device';
+import TradfriBulb from './devices/bulb';
+import TradfriOutlet from './devices/outlet';
 
 export class TradfriPlatform {
 
@@ -37,8 +38,12 @@ export class TradfriPlatform {
         for (let deviceId of ids) {
             try {
                 const device = await this.coap.get(`15001/${ deviceId }`);
-                if (typeof device['3311'] !== 'undefined') { // Remotes are not supported
-                    accessories.push(new TradfriDevice(device, this, this.log));
+                if (typeof device['3311'] !== 'undefined' && this.config.ignoreBulbs !== true) { // Add device if it's a buld
+                    accessories.push(new TradfriBulb(device, this, this.log));
+                }
+
+                if (typeof device['3312'] !== 'undefined') { // Add device if it's an outlet
+                    accessories.push(new TradfriOutlet(device, this, this.log));
                 }
             } catch (e) {
                 if (e.signal === 'SIGTERM') {
