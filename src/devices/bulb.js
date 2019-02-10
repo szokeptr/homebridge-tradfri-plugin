@@ -7,6 +7,7 @@ const transformData = data => {
         manufacturer: data['3']['0'],
         state: data['3311'][0]['5850'],
         brightness: Math.round(data['3311'][0]['5851'] / 254 * 100),
+        colorTemperature: data['3311'][0]['5711'],
         colorX: data['3311'][0]['5709'],
         colorY: data['3311'][0]['5710'],
     }
@@ -123,6 +124,14 @@ export default class TradfriAccessory {
             .on('get', this.getBrightness.bind(this))
             .on('set', this.setBrightness.bind(this));
 
+        if (typeof this.device.colorTemperature !== 'undefined') {
+            lightbulbService
+                .getCharacteristic(Characteristic.ColorTemperature)
+                .on('get', this.getColorTemp.bind(this))
+                .on('set', this.setColorTemp.bind(this));
+	} else {
+	    this.log.debug("Could not find color Temperature for " + this.device.name)		
+	}
         if (typeof this.device.colorX !== 'undefined') {
             lightbulbService
                 .getCharacteristic(Characteristic.Hue)
@@ -206,6 +215,26 @@ export default class TradfriAccessory {
         }).catch(err => {
             callback(null);
         });
+    }
+
+    getColorTemp(callback) {
+        callback(null, this.device.colorTemperature);
+    }
+
+    setColorTemp(temp, callback) {
+        const coap = this.platform.coap;
+	this.device.colorTemperature = temp
+	this.log.info("Set color temp to " + temp)
+	const data = {
+	    "3311": [{
+		"5711": temp
+	    }]
+	};
+	coap.put(`15001/${ this.device.id }`, data).then(() => {
+	    callback(null);
+	}).catch(err => {
+	    callback(null);
+	});
     }
 
     getHue(callback) {
